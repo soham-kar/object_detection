@@ -32,31 +32,55 @@ class WRDNetLoss(nn.Module):
 
         # YOLO detection loss (from ultralytics)
         self.yolo_loss = None
+        self._yolo_device = None
         if yolo_model is not None:
             try:
                 from ultralytics.utils.loss import v8DetectionLoss
                 from ultralytics.utils import IterableSimpleNamespace
 
                 # v8DetectionLoss reads model.args for hyperparameters (hyp)
-                # It expects attribute-style access (hyp.box, hyp.cls, hyp.dfl)
-                # Ensure model.args is an IterableSimpleNamespace with loss weights
                 if not hasattr(yolo_model, 'args') or isinstance(yolo_model.args, dict):
                     yolo_model.args = IterableSimpleNamespace(
-                        box=7.5,       # box loss gain
-                        cls=0.5,       # cls loss gain
-                        dfl=1.5,       # dfl loss gain
-                        box_pos_weight=-1.0,
-                        cls_pw=1.0,
-                        dfl_pw=1.0,
+                        box=7.5, cls=0.5, dfl=1.5,
+                        box_pos_weight=-1.0, cls_pw=1.0, dfl_pw=1.0,
                     )
 
                 self.yolo_loss = v8DetectionLoss(yolo_model)
+                # Store device for later sync — will be set on first forward call
+                self._yolo_device = next(yolo_model.parameters()).device
+                # Move all internal loss tensors to the model device
+                self._sync_yolo_loss_device(self._yolo_device)
                 print("  YOLO detection loss initialized (v8DetectionLoss)")
             except Exception as e:
                 print(f"  WARNING: Could not init YOLO loss: {e}")
                 import traceback
                 traceback.print_exc()
                 self.yolo_loss = None
+
+    def _sync_yolo_loss_device(self, device):
+        """Move all internal YOLO loss tensors/modules to the given device."""
+        if self.yolo_loss is None:
+            return
+        # Move the entire loss module (handles bce, bbox_loss, assigner, etc.)
+        try:
+            self.yolo_loss = self.yolo_loss.to(device)
+        except Exception:
+            pass
+        self.yolo_loss.device = device
+        # Move proj tensor (not a registered parameter, needs manual move)
+        if hasattr(self.yolo_loss, 'proj'):
+            self.yolo_loss.proj = self.yolo_loss.proj.to(device)
+        # BboxLoss also has a proj
+        if hasattr(self.yolo_loss, 'bbox_loss') and hasattr(self.yolo_loss.bbox_loss, 'proj'):
+            self.yolo_loss.bbox_loss.proj = self.yolo_loss.bbox_loss.proj.to(device)
+        # Move assigner explicitly (TaskAlignedAssigner)
+        if hasattr(self.yolo_loss, 'assigner'):
+            try:
+                self.yolo_loss.assigner = self.yolo_loss.assigner.to(device)
+                if hasattr(self.yolo_loss.assigner, 'device'):
+                    self.yolo_loss.assigner.device = device
+            except Exception:
+                pass
 
     def silog_loss(
         self,
@@ -143,10 +167,8 @@ class WRDNetLoss(nn.Module):
                     else:
                         device = 'cpu'
 
-                    # Ensure YOLO loss internal tensors are on the right device
-                    self.yolo_loss.device = device
-                    if hasattr(self.yolo_loss, 'proj') and self.yolo_loss.proj.device != device:
-                        self.yolo_loss.proj = self.yolo_loss.proj.to(device)
+                    # Sync all YOLO loss internal tensors to this device
+                    self._sync_yolo_loss_device(device)
 
                     yolo_batch = self._prepare_yolo_batch(
                         batch['bboxes'],
