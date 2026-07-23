@@ -26,10 +26,14 @@ class Config:
         for key, value in config_dict.items():
             if isinstance(value, dict):
                 # Recursively create nested Config
-                setattr(self, key, Config(value, _prefix=f'{key}.'))
+                nested = Config(value, _prefix=f'{_prefix}{key}.')
+                setattr(self, key, nested)
+                # Merge nested flat keys into this level's flat dict
+                self._flat.update(nested._flat)
+                # Also store this key itself (so config.model works)
+                self._flat[key] = nested
             else:
                 setattr(self, key, value)
-                # Also store in flat dict for getattr fallback
                 self._flat[key] = value
 
     def __getattr__(self, name: str) -> Any:
