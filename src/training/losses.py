@@ -50,6 +50,17 @@ class WRDNetLoss(nn.Module):
                 self._yolo_device = next(yolo_model.parameters()).device
                 # Move all internal loss tensors to the model device
                 self._sync_yolo_loss_device(self._yolo_device)
+
+                # Monkey-patch bbox_decode to force proj to correct device
+                # v8DetectionLoss.bbox_decode uses self.proj which stays on CPU
+                # no matter what we do. This patch moves it right before use.
+                _original_bbox_decode = self.yolo_loss.bbox_decode
+                _yolo_loss_ref = self.yolo_loss
+                def _patched_bbox_decode(anchor_points, pred_distri):
+                    _yolo_loss_ref.proj = _yolo_loss_ref.proj.to(pred_distri.device)
+                    return _original_bbox_decode(anchor_points, pred_distri)
+                self.yolo_loss.bbox_decode = _patched_bbox_decode
+
                 print("  YOLO detection loss initialized (v8DetectionLoss)")
             except Exception as e:
                 print(f"  WARNING: Could not init YOLO loss: {e}")
