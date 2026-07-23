@@ -26,8 +26,10 @@ class WRDNetTrainer:
         # Model
         self.model = WRDNet(config).to(self.device)
 
-        # Loss
-        self.criterion = WRDNetLoss(config)
+        # Loss — pass YOLO model for detection loss initialization
+        # Use the underlying DetectionModel (nn.Module), not the YOLO wrapper
+        yolo_model = self.model.yolo.model if hasattr(self.model.yolo, 'model') else None
+        self.criterion = WRDNetLoss(config, yolo_model=yolo_model)
 
         # Optimizer and scheduler
         self.optimizer = build_optimizer(self.model, config)
@@ -101,6 +103,21 @@ class WRDNetTrainer:
 
         self.writer.close()
 
+    def _move_to_device(self, batch: dict) -> dict:
+        """Move batch dict to device, handling tensor lists (bboxes)."""
+        moved = {}
+        for k, v in batch.items():
+            if isinstance(v, torch.Tensor):
+                moved[k] = v.to(self.device)
+            elif isinstance(v, list) and len(v) > 0 and isinstance(v[0], torch.Tensor):
+                # List of tensors (e.g., bboxes) — move each to device
+                moved[k] = [t.to(self.device) for t in v]
+            elif isinstance(v, list):
+                moved[k] = v  # List of non-tensors (e.g., paths)
+            else:
+                moved[k] = v
+        return moved
+
     def _train_epoch(self, train_loader: DataLoader, log_interval: int) -> float:
         """Train one epoch."""
         self.model.train()
@@ -110,21 +127,20 @@ class WRDNetTrainer:
         for batch_idx, batch in enumerate(pbar):
             # Handle paired (synth, real) batches from PairedDADataset
             if 'synth' in batch and 'real' in batch:
-                synth_batch = {k: v.to(self.device) if isinstance(v, torch.Tensor) else v
-                               for k, v in batch['synth'].items()}
-                real_batch = {k: v.to(self.device) if isinstance(v, torch.Tensor) else v
-                              for k, v in batch['real'].items()}
+                synth_batch = self._move_to_device(batch['synth'])
+                real_batch = self._move_to_device(batch['real'])
+                loss_batch = synth_batch  # Loss computed on synthetic (labeled)
             else:
-                # Single dataset mode — move to device
-                synth_batch = {k: v.to(self.device) if isinstance(v, torch.Tensor) else v
-                               for k, v in batch.items()}
+                # Single dataset mode
+                synth_batch = self._move_to_device(batch)
                 real_batch = None
+                loss_batch = synth_batch
 
             # Forward pass
             outputs = self.model.forward_train(synth_batch, real_batch)
 
             # Compute loss
-            losses = self.criterion(outputs, batch)
+            losses = self.criterion(outputs, loss_batch)
             loss = losses['total']
 
             # Backward pass
@@ -161,11 +177,9 @@ class WRDNetTrainer:
             for batch in tqdm(val_loader, desc="Validation"):
                 # Handle paired format if present
                 if 'synth' in batch:
-                    batch = {k: v.to(self.device) if isinstance(v, torch.Tensor) else v
-                             for k, v in batch['synth'].items()}
+                    batch = self._move_to_device(batch['synth'])
                 else:
-                    batch = {k: v.to(self.device) if isinstance(v, torch.Tensor) else v
-                             for k, v in batch.items()}
+                    batch = self._move_to_device(batch)
 
                 outputs = self.model.forward_train(batch)
                 losses = self.criterion(outputs, batch)
