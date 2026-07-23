@@ -58,29 +58,44 @@ class WRDNetLoss(nn.Module):
                 self.yolo_loss = None
 
     def _sync_yolo_loss_device(self, device):
-        """Move all internal YOLO loss tensors/modules to the given device."""
+        """Move all internal YOLO loss tensors/modules to the given device.
+        
+        v8DetectionLoss is NOT an nn.Module, so .to() doesn't work on it.
+        We must recursively find and move every tensor attribute.
+        """
         if self.yolo_loss is None:
             return
-        # Move the entire loss module (handles bce, bbox_loss, assigner, etc.)
-        try:
-            self.yolo_loss = self.yolo_loss.to(device)
-        except Exception:
-            pass
-        self.yolo_loss.device = device
-        # Move proj tensor (not a registered parameter, needs manual move)
-        if hasattr(self.yolo_loss, 'proj'):
-            self.yolo_loss.proj = self.yolo_loss.proj.to(device)
-        # BboxLoss also has a proj
-        if hasattr(self.yolo_loss, 'bbox_loss') and hasattr(self.yolo_loss.bbox_loss, 'proj'):
-            self.yolo_loss.bbox_loss.proj = self.yolo_loss.bbox_loss.proj.to(device)
-        # Move assigner explicitly (TaskAlignedAssigner)
-        if hasattr(self.yolo_loss, 'assigner'):
-            try:
-                self.yolo_loss.assigner = self.yolo_loss.assigner.to(device)
-                if hasattr(self.yolo_loss.assigner, 'device'):
-                    self.yolo_loss.assigner.device = device
-            except Exception:
-                pass
+
+        def _move_all_tensors(obj, dev):
+            """Recursively move all tensor attributes to device."""
+            # Move nn.Module submodules
+            if isinstance(obj, nn.Module):
+                obj = obj.to(dev)
+            
+            # Set device attribute if present
+            if hasattr(obj, 'device'):
+                try:
+                    obj.device = dev
+                except Exception:
+                    pass
+            
+            # Move all tensor attributes
+            for attr_name in list(vars(obj).keys()):
+                try:
+                    attr = getattr(obj, attr_name)
+                    if isinstance(attr, torch.Tensor):
+                        if attr.device != dev:
+                            setattr(obj, attr_name, attr.to(dev))
+                    elif isinstance(attr, nn.Module):
+                        moved = attr.to(dev)
+                        setattr(obj, attr_name, moved)
+                        _move_all_tensors(moved, dev)
+                    elif hasattr(attr, '__dict__'):
+                        _move_all_tensors(attr, dev)
+                except Exception:
+                    pass
+
+        _move_all_tensors(self.yolo_loss, device)
 
     def silog_loss(
         self,
