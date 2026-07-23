@@ -50,6 +50,12 @@ class WRDNetLoss(nn.Module):
                 self._yolo_device = next(yolo_model.parameters()).device
                 # Move all internal loss tensors to the model device
                 self._sync_yolo_loss_device(self._yolo_device)
+                # Debug: verify device
+                print(f"  YOLO loss device: {self.yolo_loss.device}")
+                print(f"  YOLO proj device: {self.yolo_loss.proj.device}")
+                print(f"  YOLO bce device: {next(self.yolo_loss.bce.parameters()).device}")
+                if hasattr(self.yolo_loss, 'bbox_loss'):
+                    print(f"  YOLO bbox_loss device: {next(self.yolo_loss.bbox_loss.parameters()).device}")
                 print("  YOLO detection loss initialized (v8DetectionLoss)")
             except Exception as e:
                 print(f"  WARNING: Could not init YOLO loss: {e}")
@@ -60,26 +66,31 @@ class WRDNetLoss(nn.Module):
     def _sync_yolo_loss_device(self, device):
         """Move all internal YOLO loss tensors/modules to the given device.
         
-        v8DetectionLoss is NOT an nn.Module, so .to() doesn't work on it.
-        We must recursively find and move every tensor attribute.
+        v8DetectionLoss stores self.device and uses it to create new tensors
+        during forward(). We must set self.device AND move all existing
+        tensor attributes (proj, bce, bbox_loss, assigner).
         """
         if self.yolo_loss is None:
             return
 
+        # Set the device attribute — this is what v8DetectionLoss uses
+        # internally to create new tensors (make_anchors, preprocess, etc.)
+        self.yolo_loss.device = device
+
         def _move_all_tensors(obj, dev):
             """Recursively move all tensor attributes to device."""
-            # Move nn.Module submodules
-            if isinstance(obj, nn.Module):
-                obj = obj.to(dev)
-            
-            # Set device attribute if present
+            # Set device attribute if present (for TaskAlignedAssigner etc.)
             if hasattr(obj, 'device'):
                 try:
                     obj.device = dev
                 except Exception:
                     pass
             
-            # Move all tensor attributes
+            # Move nn.Module submodules properly
+            if isinstance(obj, nn.Module):
+                obj = obj.to(dev)
+            
+            # Move all tensor attributes that aren't registered params/buffers
             for attr_name in list(vars(obj).keys()):
                 try:
                     attr = getattr(obj, attr_name)
@@ -90,7 +101,7 @@ class WRDNetLoss(nn.Module):
                         moved = attr.to(dev)
                         setattr(obj, attr_name, moved)
                         _move_all_tensors(moved, dev)
-                    elif hasattr(attr, '__dict__'):
+                    elif hasattr(attr, '__dict__') and not isinstance(attr, type):
                         _move_all_tensors(attr, dev)
                 except Exception:
                     pass
