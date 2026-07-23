@@ -58,49 +58,42 @@ class WRDNetLoss(nn.Module):
                 self.yolo_loss = None
 
     def _sync_yolo_loss_device(self, device):
-        """Move all internal YOLO loss tensors/modules to the given device.
+        """Move all internal YOLO loss tensors to the given device.
         
-        v8DetectionLoss stores self.device and uses it to create new tensors
-        during forward(). We must set self.device AND move all existing
-        tensor attributes (proj, bce, bbox_loss, assigner).
+        v8DetectionLoss is NOT a standard nn.Module — it stores plain tensor
+        attributes (proj, device) that .to() doesn't move. We must explicitly
+        move each one.
         """
         if self.yolo_loss is None:
             return
+        yl = self.yolo_loss
 
-        # Set the device attribute — this is what v8DetectionLoss uses
-        # internally to create new tensors (make_anchors, preprocess, etc.)
-        self.yolo_loss.device = device
+        # 1. Set self.device — used by make_anchors, preprocess, etc.
+        yl.device = device
 
-        def _move_all_tensors(obj, dev):
-            """Recursively move all tensor attributes to device."""
-            # Set device attribute if present (for TaskAlignedAssigner etc.)
-            if hasattr(obj, 'device'):
-                try:
-                    obj.device = dev
-                except Exception:
-                    pass
-            
-            # Move nn.Module submodules properly
-            if isinstance(obj, nn.Module):
-                obj = obj.to(dev)
-            
-            # Move all tensor attributes that aren't registered params/buffers
-            for attr_name in list(vars(obj).keys()):
-                try:
-                    attr = getattr(obj, attr_name)
-                    if isinstance(attr, torch.Tensor):
-                        if attr.device != dev:
-                            setattr(obj, attr_name, attr.to(dev))
-                    elif isinstance(attr, nn.Module):
-                        moved = attr.to(dev)
-                        setattr(obj, attr_name, moved)
-                        _move_all_tensors(moved, dev)
-                    elif hasattr(attr, '__dict__') and not isinstance(attr, type):
-                        _move_all_tensors(attr, dev)
-                except Exception:
-                    pass
+        # 2. Move self.proj — used in bbox_decode (line 397)
+        if hasattr(yl, 'proj') and isinstance(yl.proj, torch.Tensor):
+            yl.proj = yl.proj.to(device)
 
-        _move_all_tensors(self.yolo_loss, device)
+        # 3. Move bce (nn.Module — .to() works)
+        if hasattr(yl, 'bce'):
+            yl.bce = yl.bce.to(device)
+
+        # 4. Move bbox_loss (nn.Module)
+        if hasattr(yl, 'bbox_loss'):
+            yl.bbox_loss = yl.bbox_loss.to(device)
+            # BboxLoss also has a proj tensor
+            if hasattr(yl.bbox_loss, 'proj') and isinstance(yl.bbox_loss.proj, torch.Tensor):
+                yl.bbox_loss.proj = yl.bbox_loss.proj.to(device)
+
+        # 5. Move assigner (TaskAlignedAssigner)
+        if hasattr(yl, 'assigner'):
+            try:
+                yl.assigner = yl.assigner.to(device)
+            except Exception:
+                pass
+            if hasattr(yl.assigner, 'device'):
+                yl.assigner.device = device
 
     def silog_loss(
         self,
@@ -140,9 +133,11 @@ class WRDNetLoss(nn.Module):
         for img_idx, b in enumerate(bboxes):
             if b.shape[0] == 0:
                 continue
+            # Ensure bboxes are on the correct device
+            b = b.to(device)
             batch_idx_list.append(torch.full((b.shape[0],), img_idx, dtype=torch.float32, device=device))
-            cls_list.append(b[:, 0].float())  # class ID
-            bbox_list.append(b[:, 1:5].float())  # cx, cy, w, h
+            cls_list.append(b[:, 0].float())  # class ID (now on device)
+            bbox_list.append(b[:, 1:5].float())  # cx, cy, w, h (now on device)
 
         if not batch_idx_list:
             return {
