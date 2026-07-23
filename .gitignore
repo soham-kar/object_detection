@@ -1,6 +1,6 @@
 # Datasets (too large for git)
-data/
-external/
+/data/
+/external/
 
 # Virtual environment
 .venv/
