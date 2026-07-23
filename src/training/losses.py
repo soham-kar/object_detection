@@ -61,8 +61,8 @@ class WRDNetLoss(nn.Module):
         """Move all internal YOLO loss tensors to the given device.
         
         v8DetectionLoss is NOT a standard nn.Module — it stores plain tensor
-        attributes (proj, device) that .to() doesn't move. We must explicitly
-        move each one.
+        attributes (proj, stride, device) that .to() doesn't move. We must
+        explicitly move each one.
         """
         if self.yolo_loss is None:
             return
@@ -71,22 +71,26 @@ class WRDNetLoss(nn.Module):
         # 1. Set self.device — used by make_anchors, preprocess, etc.
         yl.device = device
 
-        # 2. Move self.proj — used in bbox_decode (line 397)
+        # 2. Move self.stride — used in get_assigned_targets_and_loss (line 415)
+        if hasattr(yl, 'stride') and isinstance(yl.stride, torch.Tensor):
+            yl.stride = yl.stride.to(device)
+
+        # 3. Move self.proj — used in bbox_decode (line 397)
         if hasattr(yl, 'proj') and isinstance(yl.proj, torch.Tensor):
             yl.proj = yl.proj.to(device)
 
-        # 3. Move bce (nn.Module — .to() works)
+        # 4. Move bce (nn.Module — .to() works)
         if hasattr(yl, 'bce'):
             yl.bce = yl.bce.to(device)
 
-        # 4. Move bbox_loss (nn.Module)
+        # 5. Move bbox_loss (nn.Module)
         if hasattr(yl, 'bbox_loss'):
             yl.bbox_loss = yl.bbox_loss.to(device)
             # BboxLoss also has a proj tensor
             if hasattr(yl.bbox_loss, 'proj') and isinstance(yl.bbox_loss.proj, torch.Tensor):
                 yl.bbox_loss.proj = yl.bbox_loss.proj.to(device)
 
-        # 5. Move assigner (TaskAlignedAssigner)
+        # 6. Move assigner (TaskAlignedAssigner)
         if hasattr(yl, 'assigner'):
             try:
                 yl.assigner = yl.assigner.to(device)
@@ -94,6 +98,11 @@ class WRDNetLoss(nn.Module):
                 pass
             if hasattr(yl.assigner, 'device'):
                 yl.assigner.device = device
+
+        # 7. Move class_weights if present
+        if hasattr(yl, 'class_weights') and yl.class_weights is not None:
+            if isinstance(yl.class_weights, torch.Tensor):
+                yl.class_weights = yl.class_weights.to(device)
 
     def silog_loss(
         self,
