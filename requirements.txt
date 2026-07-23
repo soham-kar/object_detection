@@ -1,0 +1,39 @@
+# WRDNet Dependencies
+
+# Core
+torch>=2.1.0
+torchvision>=0.16.0
+torchaudio>=2.1.0
+
+# Detection
+ultralytics>=8.3.0
+
+# Image Processing
+opencv-python>=4.8.0
+Pillow>=10.0.0
+albumentations>=1.3.0
+
+# Metrics & Evaluation
+pycocotools>=2.0.7
+tensorboard>=2.14.0
+thop>=0.1.1
+
+# Scientific Computing
+numpy>=1.24.0
+scipy>=1.11.0
+
+# Visualization
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# Utilities
+tqdm>=4.66.0
+pyyaml>=6.0.1
+einops>=0.7.0
+
+# Depth / No-reference metrics (optional)
+# pyiqa>=0.1.0  # For BRISQUE, NIQE — install manually if needed
+
+# DehazeFormer (install from source)
+# git clone https://github.com/IDKiro/DehazeFormer.git external/DehazeFormer
+# pip install -e external/DehazeFormer
