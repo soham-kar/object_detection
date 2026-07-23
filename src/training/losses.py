@@ -129,79 +129,101 @@ class WRDNetLoss(nn.Module):
         if 'detections_s' in outputs and 'bboxes' in batch and batch['bboxes'] is not None:
             if self.yolo_loss is not None:
                 try:
-                    device = outputs['detections_s'].device if isinstance(outputs['detections_s'], torch.Tensor) else 'cpu'
+                    # Determine device from detections (may be tuple)
+                    det_s = outputs['detections_s']
+                    if isinstance(det_s, (tuple, list)) and len(det_s) > 0:
+                        if isinstance(det_s[0], torch.Tensor):
+                            device = det_s[0].device
+                        elif isinstance(det_s[0], dict) and 'boxes' in det_s[0]:
+                            device = det_s[0]['boxes'].device
+                        else:
+                            device = 'cpu'
+                    elif isinstance(det_s, torch.Tensor):
+                        device = det_s.device
+                    else:
+                        device = 'cpu'
+
+                    # Ensure YOLO loss internal tensors are on the right device
+                    self.yolo_loss.device = device
+                    if hasattr(self.yolo_loss, 'proj') and self.yolo_loss.proj.device != device:
+                        self.yolo_loss.proj = self.yolo_loss.proj.to(device)
+
                     yolo_batch = self._prepare_yolo_batch(
                         batch['bboxes'],
                         batch_size=len(batch['bboxes']),
                         device=device,
                     )
                     # v8DetectionLoss returns (loss, loss_items)
-                    # loss: scalar tensor (total), loss_items: [box, cls, dfl]
-                    det_loss_result = self.yolo_loss(outputs['detections_s'], yolo_batch)
+                    det_loss_result = self.yolo_loss(det_s, yolo_batch)
                     if isinstance(det_loss_result, (tuple, list)):
                         loss_tensor = det_loss_result[0]
-                        # loss_tensor might be a scalar or a 3-element tensor
                         if loss_tensor.dim() == 0:
                             losses['det'] = loss_tensor
                         else:
-                            losses['det'] = loss_tensor.sum()  # Sum box+cls+dfl
+                            losses['det'] = loss_tensor.sum()
                     else:
                         losses['det'] = det_loss_result
                 except Exception as e:
                     print(f"  WARNING: YOLO loss computation failed: {e}")
-                    losses['det'] = torch.tensor(0.0, requires_grad=True)
+                    # Create zero loss on the correct device with gradient
+                    dev = outputs['restored_s'].device if 'restored_s' in outputs else 'cpu'
+                    losses['det'] = torch.tensor(0.0, device=dev, requires_grad=True)
             else:
-                losses['det'] = torch.tensor(0.0, requires_grad=True)
+                dev = outputs['restored_s'].device if 'restored_s' in outputs else 'cpu'
+                losses['det'] = torch.tensor(0.0, device=dev, requires_grad=True)
         else:
-            losses['det'] = torch.tensor(0.0, requires_grad=True)
+            dev = outputs['restored_s'].device if 'restored_s' in outputs else 'cpu'
+            losses['det'] = torch.tensor(0.0, device=dev, requires_grad=True)
 
         # ── Restoration loss (synthetic only) ──
         if 'restored_s' in outputs and 'clear_gt' in batch and batch['clear_gt'] is not None:
             losses['rest'] = self.restoration_loss(outputs['restored_s'], batch['clear_gt'])
         else:
-            losses['rest'] = torch.tensor(0.0)
+            dev = outputs['restored_s'].device if 'restored_s' in outputs else 'cpu'
+            losses['rest'] = torch.tensor(0.0, device=dev)
 
         # ── Depth loss (synthetic only — SILog) ──
         if 'depth_s' in outputs and 'depth_gt' in batch and batch['depth_gt'] is not None:
             losses['depth'] = self.silog_loss(outputs['depth_s'], batch['depth_gt'])
         else:
-            losses['depth'] = torch.tensor(0.0)
+            dev = outputs['restored_s'].device if 'restored_s' in outputs else 'cpu'
+            losses['depth'] = torch.tensor(0.0, device=dev)
 
         # ── Entropy loss on real fog detections (FDA paper) ──
         if 'detections_r' in outputs and outputs['detections_r'] is not None:
             try:
-                # YOLO output is typically a tuple of (raw_preds, decoded_preds)
-                # or a tensor of [B, num_classes+4, num_anchors]
                 det_r = outputs['detections_r']
                 if isinstance(det_r, (tuple, list)):
-                    det_r = det_r[0]  # Raw predictions
+                    det_r = det_r[0]
 
                 if isinstance(det_r, torch.Tensor) and det_r.dim() >= 2:
-                    # Compute entropy on class predictions
-                    # det_r shape: [B, 84, 8400] → class scores are channels 4:84
                     cls_scores = det_r[:, 4:, :] if det_r.dim() == 3 else det_r[..., 4:]
                     probs = torch.softmax(cls_scores, dim=1)
                     entropy = -(probs * torch.log(probs + 1e-8)).sum(dim=1).mean()
-                    # Charbonnier penalty (FDA paper)
                     losses['entropy'] = (entropy ** 2 + 0.001 ** 2) ** 0.75
                 else:
-                    losses['entropy'] = torch.tensor(0.0)
+                    dev = outputs['restored_s'].device if 'restored_s' in outputs else 'cpu'
+                    losses['entropy'] = torch.tensor(0.0, device=dev)
             except Exception:
-                losses['entropy'] = torch.tensor(0.0)
+                dev = outputs['restored_s'].device if 'restored_s' in outputs else 'cpu'
+                losses['entropy'] = torch.tensor(0.0, device=dev)
         else:
-            losses['entropy'] = torch.tensor(0.0)
+            dev = outputs['restored_s'].device if 'restored_s' in outputs else 'cpu'
+            losses['entropy'] = torch.tensor(0.0, device=dev)
 
         # ── Domain alignment loss ──
         if 'domain_loss' in outputs and outputs['domain_loss'] is not None:
             losses['domain'] = outputs['domain_loss']
         else:
-            losses['domain'] = torch.tensor(0.0)
+            dev = outputs['restored_s'].device if 'restored_s' in outputs else 'cpu'
+            losses['domain'] = torch.tensor(0.0, device=dev)
 
         # ── FSG consistency loss ──
         if 'fsg_cons_loss' in outputs and outputs['fsg_cons_loss'] is not None:
             losses['fsg_cons'] = outputs['fsg_cons_loss']
         else:
-            losses['fsg_cons'] = torch.tensor(0.0)
+            dev = outputs['restored_s'].device if 'restored_s' in outputs else 'cpu'
+            losses['fsg_cons'] = torch.tensor(0.0, device=dev)
 
         # ── Total ──
         total = losses['det']
