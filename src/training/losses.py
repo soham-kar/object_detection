@@ -50,12 +50,6 @@ class WRDNetLoss(nn.Module):
                 self._yolo_device = next(yolo_model.parameters()).device
                 # Move all internal loss tensors to the model device
                 self._sync_yolo_loss_device(self._yolo_device)
-                # Debug: verify device
-                print(f"  YOLO loss device: {self.yolo_loss.device}")
-                print(f"  YOLO proj device: {self.yolo_loss.proj.device}")
-                print(f"  YOLO bce device: {next(self.yolo_loss.bce.parameters()).device}")
-                if hasattr(self.yolo_loss, 'bbox_loss'):
-                    print(f"  YOLO bbox_loss device: {next(self.yolo_loss.bbox_loss.parameters()).device}")
                 print("  YOLO detection loss initialized (v8DetectionLoss)")
             except Exception as e:
                 print(f"  WARNING: Could not init YOLO loss: {e}")
