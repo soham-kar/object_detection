@@ -194,6 +194,16 @@ class WRDNetLoss(nn.Module):
                     # Sync all YOLO loss internal tensors to this device
                     self._sync_yolo_loss_device(device)
 
+                    # Monkey-patch proj to ensure it's on the right device
+                    # This is needed because v8DetectionLoss.bbox_decode uses
+                    # self.proj which may revert to CPU
+                    if hasattr(self.yolo_loss, 'proj'):
+                        self.yolo_loss.proj = self.yolo_loss.proj.to(device)
+                    if hasattr(self.yolo_loss, 'bbox_loss') and hasattr(self.yolo_loss.bbox_loss, 'proj'):
+                        self.yolo_loss.bbox_loss.proj = self.yolo_loss.bbox_loss.proj.to(device)
+                    if hasattr(self.yolo_loss, 'stride'):
+                        self.yolo_loss.stride = self.yolo_loss.stride.to(device)
+
                     yolo_batch = self._prepare_yolo_batch(
                         batch['bboxes'],
                         batch_size=len(batch['bboxes']),
