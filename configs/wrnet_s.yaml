@@ -1,0 +1,62 @@
+# WRDNet-S full configuration
+# Phase 1: Domain Adaptation + Depth
+
+model:
+  dehazeformer_variant: 'T'
+  yolo_variant: 's'
+  pretrained: true
+  input_size_dehaze: 320
+  input_size_detect: 640
+  fsg_channels: [256, 512, 1024]
+  use_depth: true
+  use_dg_fsg: true
+
+training:
+  phase: 'da'
+  epochs: 120
+  batch_size: 8
+  lr: 5.0e-4
+  optimizer: 'AdamW'
+  weight_decay: 1.0e-4
+  scheduler: 'cosine'
+  warmup_epochs: 5
+
+  # Loss weights
+  lambda_rest: 0.5
+  lambda_depth: 0.1
+  lambda_entropy: 0.01
+  lambda_domain: 0.1
+  lambda_fsg: 0.01
+
+  # Data
+  synthetic_data: 'data/foggy_cityscapes'
+  real_data:
+    - 'data/acdc/rgb_anon/fog'
+    - 'data/dawn/Images/fog'
+
+  # Logging
+  log_interval: 100
+  save_interval: 5
+  checkpoint_dir: 'experiments/checkpoints'
+  log_dir: 'experiments/logs'
+
+  # Early stopping
+  early_stopping: true
+  early_stopping_patience: 10
+  early_stopping_metric: 'mAP@50'
+
+domain_adaptation:
+  use_fda: true
+  use_dct_align: true
+  use_fsg_consistency: true
+  use_tta: true
+
+  # FDA schedule
+  fda_start_epoch: 30
+  fda_beta_schedule:
+    - [30, 0.00]
+    - [60, 0.02]
+    - [90, 0.04]
+    - [120, [0.01, 0.06]]
+
+seed: 42
