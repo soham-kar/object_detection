@@ -1,0 +1,46 @@
+# Datasets (too large for git)
+data/
+external/
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Python caches
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Experiment outputs
+experiments/
+runs/
+wandb/
+
+# Pretrained weights
+*.pt
+*.pth
+*.ckpt
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+tensorboard/
+
+# Trash
+.Trash-1000/
