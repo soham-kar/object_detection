@@ -67,10 +67,10 @@ class DehazeFormerWrapper(nn.Module):
 
         # ── Projection layers: DehazeFormer channels → YOLO feature dims ──
         # YOLOv11s backbone: P3=256ch, P4=512ch, P5=1024ch
-        self.yolo_channels = [256, 512, 1024]
+        self.yolo_channels = [256, 256, 512]  # Verified from YOLOv11s backbone
         self.proj_stage1 = nn.Conv2d(24, 256, kernel_size=1)
-        self.proj_stage2 = nn.Conv2d(48, 512, kernel_size=1)
-        self.proj_stage3 = nn.Conv2d(96, 1024, kernel_size=1)
+        self.proj_stage2 = nn.Conv2d(48, 256, kernel_size=1)
+        self.proj_stage3 = nn.Conv2d(96, 512, kernel_size=1)
 
         # ── MAA modules (optional, stages 1-2 only) ──
         if self.use_maa:

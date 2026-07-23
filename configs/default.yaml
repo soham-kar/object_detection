@@ -7,14 +7,22 @@ model:
   pretrained: true
   input_size_dehaze: 320
   input_size_detect: 640
-  fsg_channels: [256, 512, 1024]
+  fsg_channels: [256, 256, 512]  # P3, P4, P5 channels (verified from YOLOv11s)
   use_depth: false
   use_dg_fsg: false
+
+# Data configuration
+data:
+  data_root: 'data'
+  fog_density: '0.02'
+  input_size: 640
+  real_datasets: ['acdc', 'zurich']
 
 training:
   phase: 'warmup'
   epochs: 30
   batch_size: 16
+  num_workers: 4
   lr: 1.0e-3
   optimizer: 'AdamW'
   weight_decay: 1.0e-4
@@ -27,12 +35,6 @@ training:
   lambda_entropy: 0.01
   lambda_domain: 0.1
   lambda_fsg: 0.01
-
-  # Data
-  synthetic_data: 'data/foggy_cityscapes'
-  real_data:
-    - 'data/acdc/rgb_anon/fog'
-    - 'data/dawn/Images/fog'
 
   # Logging
   log_interval: 100
