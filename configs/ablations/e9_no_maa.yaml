@@ -1,0 +1,49 @@
+# E9: E3 - MAA
+# Ablation: remove Multi-Angle Attention
+
+model:
+  dehazeformer_variant: 'T'
+  yolo_variant: 's'
+  pretrained: true
+  input_size_dehaze: 320
+  input_size_detect: 640
+  fsg_channels: [256, 512, 1024]
+  use_depth: false
+  use_dg_fsg: false
+  use_maa: false
+
+training:
+  phase: 'no_maa'
+  epochs: 50
+  batch_size: 16
+  lr: 1.0e-3
+  optimizer: 'AdamW'
+  weight_decay: 1.0e-4
+  scheduler: 'cosine'
+  warmup_epochs: 5
+
+  lambda_rest: 0.5
+  lambda_depth: 0.0
+  lambda_entropy: 0.0
+  lambda_domain: 0.0
+  lambda_fsg: 0.0
+
+  synthetic_data: 'data/foggy_cityscapes'
+  real_data: []
+
+  log_interval: 100
+  save_interval: 5
+  checkpoint_dir: 'experiments/checkpoints/e9'
+  log_dir: 'experiments/logs/e9'
+
+  early_stopping: true
+  early_stopping_patience: 10
+  early_stopping_metric: 'mAP@50'
+
+domain_adaptation:
+  use_fda: false
+  use_dct_align: false
+  use_fsg_consistency: false
+  use_tta: false
+
+seed: 42

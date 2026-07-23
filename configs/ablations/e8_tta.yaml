@@ -1,0 +1,57 @@
+# E8: E7 + TTA
+# Full DA + Test-Time Adaptation
+
+model:
+  dehazeformer_variant: 'T'
+  yolo_variant: 's'
+  pretrained: true
+  input_size_dehaze: 320
+  input_size_detect: 640
+  fsg_channels: [256, 512, 1024]
+  use_depth: false
+  use_dg_fsg: false
+
+training:
+  phase: 'tta'
+  epochs: 120
+  batch_size: 8
+  lr: 5.0e-4
+  optimizer: 'AdamW'
+  weight_decay: 1.0e-4
+  scheduler: 'cosine'
+  warmup_epochs: 5
+
+  lambda_rest: 0.5
+  lambda_depth: 0.0
+  lambda_entropy: 0.01
+  lambda_domain: 0.1
+  lambda_fsg: 0.01
+
+  synthetic_data: 'data/foggy_cityscapes'
+  real_data:
+    - 'data/acdc/rgb_anon/fog'
+    - 'data/dawn/Images/fog'
+
+  log_interval: 100
+  save_interval: 5
+  checkpoint_dir: 'experiments/checkpoints/e8'
+  log_dir: 'experiments/logs/e8'
+
+  early_stopping: true
+  early_stopping_patience: 10
+  early_stopping_metric: 'mAP@50'
+
+domain_adaptation:
+  use_fda: true
+  use_dct_align: true
+  use_fsg_consistency: true
+  use_tta: true
+
+  fda_start_epoch: 30
+  fda_beta_schedule:
+    - [30, 0.00]
+    - [60, 0.02]
+    - [90, 0.04]
+    - [120, [0.01, 0.06]]
+
+seed: 42
