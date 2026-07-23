@@ -201,7 +201,9 @@ class WRDNetLoss(nn.Module):
                     else:
                         losses['det'] = det_loss_result
                 except Exception as e:
+                    import traceback
                     print(f"  WARNING: YOLO loss computation failed: {e}")
+                    traceback.print_exc()
                     # Create zero loss on the correct device with gradient
                     dev = outputs['restored_s'].device if 'restored_s' in outputs else 'cpu'
                     losses['det'] = torch.tensor(0.0, device=dev, requires_grad=True)
