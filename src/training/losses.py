@@ -148,16 +148,33 @@ class WRDNetLoss(nn.Module):
         Scale-Invariant Log loss for monocular depth.
 
         Reference: Eigen et al., NeurIPS 2014
-        """
-        mask = (gt_depth > 0).float()
-        n_valid = mask.sum() + 1e-8
 
+        Safety: pred_depth is clamped to [0.01, 1.0] to prevent log(0)=NaN.
+        gt_depth is already normalized to [0, 1] by DepthNormalize.
+        """
+        # Clamp predictions to prevent log(0) or log(negative)
+        pred_depth = torch.clamp(pred_depth, min=0.01, max=1.0)
+
+        # Only compute on valid GT pixels (depth > 0)
+        mask = (gt_depth > 0).float()
+        n_valid = mask.sum()
+
+        if n_valid < 1:
+            # No valid pixels — return zero loss
+            return torch.tensor(0.0, device=pred_depth.device, requires_grad=True)
+
+        # Log difference (both pred and gt are in [0.01, 1.0] range)
         g = torch.log(pred_depth * mask + 1e-8) - torch.log(gt_depth * mask + 1e-8)
         g = g * mask
 
+        # SILog formula
         Dg = variance_focus * (g.pow(2).sum() / n_valid)
         term2 = (1 - variance_focus) * (g.sum() / n_valid).pow(2)
-        return torch.sqrt(torch.clamp(Dg - term2, min=0.0))
+        loss = Dg - term2
+
+        # Clamp to prevent sqrt of negative due to numerical issues
+        loss = torch.clamp(loss, min=0.0)
+        return torch.sqrt(loss + 1e-8)
 
     def _prepare_yolo_batch(self, bboxes: List[torch.Tensor], batch_size: int,
                               device: str) -> dict:
