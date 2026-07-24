@@ -52,14 +52,24 @@ class WRDNetLoss(nn.Module):
                 self._sync_yolo_loss_device(self._yolo_device)
 
                 # Monkey-patch bbox_decode to force proj to correct device
-                # v8DetectionLoss.bbox_decode uses self.proj which stays on CPU
-                # no matter what we do. This patch moves it right before use.
                 _original_bbox_decode = self.yolo_loss.bbox_decode
                 _yolo_loss_ref = self.yolo_loss
                 def _patched_bbox_decode(anchor_points, pred_distri):
                     _yolo_loss_ref.proj = _yolo_loss_ref.proj.to(pred_distri.device)
                     return _original_bbox_decode(anchor_points, pred_distri)
                 self.yolo_loss.bbox_decode = _patched_bbox_decode
+
+                # Monkey-patch assigner to force anchor points to correct device
+                # TaskAlignedAssigner.select_candidates_in_gts creates tensors
+                # on CPU when batch has no GT bboxes
+                if hasattr(self.yolo_loss, 'assigner'):
+                    _original_select = self.yolo_loss.assigner.select_candidates_in_gts
+                    def _patched_select(anc_points, gt_bboxes, mask_gt=None):
+                        # Force anc_points to same device as gt_bboxes
+                        if isinstance(gt_bboxes, torch.Tensor) and isinstance(anc_points, torch.Tensor):
+                            anc_points = anc_points.to(gt_bboxes.device)
+                        return _original_select(anc_points, gt_bboxes, mask_gt)
+                    self.yolo_loss.assigner.select_candidates_in_gts = _patched_select
 
                 print("  YOLO detection loss initialized (v8DetectionLoss)")
             except Exception as e:
