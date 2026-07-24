@@ -60,16 +60,23 @@ class WRDNetLoss(nn.Module):
                 self.yolo_loss.bbox_decode = _patched_bbox_decode
 
                 # Monkey-patch assigner to force anchor points to correct device
-                # TaskAlignedAssigner.select_candidates_in_gts creates tensors
-                # on CPU when batch has no GT bboxes
                 if hasattr(self.yolo_loss, 'assigner'):
-                    _original_select = self.yolo_loss.assigner.select_candidates_in_gts
+                    _assigner = self.yolo_loss.assigner
+                    
+                    # Patch select_candidates_in_gts
+                    _original_select = _assigner.select_candidates_in_gts
                     def _patched_select(anc_points, gt_bboxes, mask_gt=None):
-                        # Force anc_points to same device as gt_bboxes
                         if isinstance(gt_bboxes, torch.Tensor) and isinstance(anc_points, torch.Tensor):
                             anc_points = anc_points.to(gt_bboxes.device)
                         return _original_select(anc_points, gt_bboxes, mask_gt)
-                    self.yolo_loss.assigner.select_candidates_in_gts = _patched_select
+                    _assigner.select_candidates_in_gts = _patched_select
+
+                    # Patch iou_calculation to force gt_bboxes to pd_bboxes device
+                    _original_iou = _assigner.iou_calculation
+                    def _patched_iou(gt_bboxes, pd_bboxes):
+                        gt_bboxes = gt_bboxes.to(pd_bboxes.device)
+                        return _original_iou(gt_bboxes, pd_bboxes)
+                    _assigner.iou_calculation = _patched_iou
 
                 print("  YOLO detection loss initialized (v8DetectionLoss)")
             except Exception as e:
