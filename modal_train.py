@@ -41,7 +41,8 @@ import click
 app = modal.App("wrdnet-training")
 
 # GPU selection — change this to match your Modal plan
-GPU_TYPE = "A100-40GB"  # Options: T4, L4, A10G, A100-40GB, A100-80GB, L40S
+# Free tier: "T4" | Paid: "L4", "A10G", "A100-40GB", "A100-80GB", "L40S"
+GPU_TYPE = "T4"  # Using T4 (free tier) — change to A100-40GB after adding payment
 
 # Persistent volume for data and checkpoints
 DATA_VOLUME = modal.Volume.from_name("wrdnet-data", create_if_missing=True)
