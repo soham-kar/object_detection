@@ -112,15 +112,14 @@ def download_from_gdrive():
     result = subprocess.run([
         "gdown", "--folder", f"https://drive.google.com/drive/folders/{GDRIVE_FOLDER_ID}",
         "-O", "/data",
-        "--remaining-ok",
     ], capture_output=True, text=True)
 
     print(result.stdout)
     if result.returncode != 0:
         print("STDERR:", result.stderr)
-        print("\nTrying alternative method (individual files)...")
+        print("\nTrying alternative method (no cookies)...")
 
-        # List files and download individually
+        # Try without cookies
         result2 = subprocess.run([
             "gdown", "--folder", f"https://drive.google.com/drive/folders/{GDRIVE_FOLDER_ID}",
             "-O", "/data", "--no-cookies",
