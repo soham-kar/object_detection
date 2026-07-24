@@ -72,7 +72,7 @@ image = (
     )
     .run_commands(
         "git clone https://github.com/IDKiro/DehazeFormer.git /tmp/DehazeFormer",
-        "cd /tmp/DehazeFormer && pip install -e .",
+        # DehazeFormer doesn't have setup.py — just add to PYTHONPATH at runtime
     )
     .run_commands(
         "git clone https://github.com/soham-kar/object_detection.git /tmp/object_detection",
@@ -190,6 +190,7 @@ def train(
     # Set up paths
     REPO = "/tmp/object_detection"
     sys.path.insert(0, REPO)
+    sys.path.insert(0, "/tmp/DehazeFormer")  # DehazeFormer module
     os.chdir(REPO)
 
     # Pull latest code
@@ -342,6 +343,7 @@ def evaluate(
 
     REPO = "/tmp/object_detection"
     sys.path.insert(0, REPO)
+    sys.path.insert(0, "/tmp/DehazeFormer")  # DehazeFormer module
     os.chdir(REPO)
 
     subprocess.run(["git", "pull"], cwd=REPO, check=True)
@@ -452,6 +454,7 @@ def plot_alpha_depth(phase: str = "phase1"):
 
     REPO = "/tmp/object_detection"
     sys.path.insert(0, REPO)
+    sys.path.insert(0, "/tmp/DehazeFormer")  # DehazeFormer module
     os.chdir(REPO)
 
     subprocess.run(["git", "pull"], cwd=REPO, check=True)
