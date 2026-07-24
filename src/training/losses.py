@@ -68,32 +68,21 @@ class WRDNetLoss(nn.Module):
                     return out.to(dev)
                 self.yolo_loss.preprocess = _patched_preprocess
 
-                # Monkey-patch assigner methods for device sync
+                # Monkey-patch assigner: patch forward() to force ALL inputs to same device
+                # This is the entry point — fixing here fixes all downstream methods
                 if hasattr(self.yolo_loss, 'assigner'):
                     _assigner = self.yolo_loss.assigner
-
-                    # Patch select_candidates_in_gts
-                    _original_select = _assigner.select_candidates_in_gts
-                    def _patched_select(anc_points, gt_bboxes, mask_gt=None):
-                        if isinstance(gt_bboxes, torch.Tensor) and isinstance(anc_points, torch.Tensor):
-                            anc_points = anc_points.to(gt_bboxes.device)
-                        return _original_select(anc_points, gt_bboxes, mask_gt)
-                    _assigner.select_candidates_in_gts = _patched_select
-
-                    # Patch iou_calculation
-                    _original_iou = _assigner.iou_calculation
-                    def _patched_iou(gt_bboxes, pd_bboxes):
-                        gt_bboxes = gt_bboxes.to(pd_bboxes.device)
-                        return _original_iou(gt_bboxes, pd_bboxes)
-                    _assigner.iou_calculation = _patched_iou
-
-                    # Patch select_topk_candidates
-                    _original_topk = _assigner.select_topk_candidates
-                    def _patched_topk(metrics, topk_mask=None):
-                        if topk_mask is not None and isinstance(metrics, torch.Tensor):
-                            topk_mask = topk_mask.to(metrics.device)
-                        return _original_topk(metrics, topk_mask)
-                    _assigner.select_topk_candidates = _patched_topk
+                    _original_assigner_forward = _assigner.forward
+                    def _patched_assigner_forward(pd_scores, pd_bboxes, anc_points, gt_labels, gt_bboxes, mask_gt):
+                        # Force ALL tensors to pd_scores device (should be cuda:0)
+                        dev = pd_scores.device
+                        pd_bboxes = pd_bboxes.to(dev)
+                        anc_points = anc_points.to(dev)
+                        gt_labels = gt_labels.to(dev)
+                        gt_bboxes = gt_bboxes.to(dev)
+                        mask_gt = mask_gt.to(dev)
+                        return _original_assigner_forward(pd_scores, pd_bboxes, anc_points, gt_labels, gt_bboxes, mask_gt)
+                    _assigner.forward = _patched_assigner_forward
 
                 print("  YOLO detection loss initialized (v8DetectionLoss)")
             except Exception as e:
