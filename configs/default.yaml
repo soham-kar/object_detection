@@ -8,8 +8,8 @@ model:
   input_size_dehaze: 320
   input_size_detect: 640
   fsg_channels: [256, 256, 512]  # P3, P4, P5 channels (verified from YOLOv11s)
-  use_depth: false
-  use_dg_fsg: false
+  use_depth: true
+  use_dg_fsg: false  # Set to true for E12 (DG-FSG experiment)
 
 # Data configuration
 data:
