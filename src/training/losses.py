@@ -59,10 +59,19 @@ class WRDNetLoss(nn.Module):
                     return _original_bbox_decode(anchor_points, pred_distri)
                 self.yolo_loss.bbox_decode = _patched_bbox_decode
 
-                # Monkey-patch assigner to force anchor points to correct device
+                # Monkey-patch assigner to force all tensors to correct device
                 if hasattr(self.yolo_loss, 'assigner'):
                     _assigner = self.yolo_loss.assigner
                     
+                    # Patch preprocess to move output to assigner's device
+                    _original_preprocess = _assigner.preprocess
+                    def _patched_preprocess(targets, batch_size, scale_tensor):
+                        out = _original_preprocess(targets, batch_size, scale_tensor)
+                        # Move output to the device of scale_tensor
+                        dev = scale_tensor.device if isinstance(scale_tensor, torch.Tensor) else _assigner.device
+                        return out.to(dev)
+                    _assigner.preprocess = _patched_preprocess
+
                     # Patch select_candidates_in_gts
                     _original_select = _assigner.select_candidates_in_gts
                     def _patched_select(anc_points, gt_bboxes, mask_gt=None):
@@ -71,12 +80,20 @@ class WRDNetLoss(nn.Module):
                         return _original_select(anc_points, gt_bboxes, mask_gt)
                     _assigner.select_candidates_in_gts = _patched_select
 
-                    # Patch iou_calculation to force gt_bboxes to pd_bboxes device
+                    # Patch iou_calculation
                     _original_iou = _assigner.iou_calculation
                     def _patched_iou(gt_bboxes, pd_bboxes):
                         gt_bboxes = gt_bboxes.to(pd_bboxes.device)
                         return _original_iou(gt_bboxes, pd_bboxes)
                     _assigner.iou_calculation = _patched_iou
+
+                    # Patch select_topk_candidates
+                    _original_topk = _assigner.select_topk_candidates
+                    def _patched_topk(metrics, topk_mask=None):
+                        if topk_mask is not None and isinstance(metrics, torch.Tensor):
+                            topk_mask = topk_mask.to(metrics.device)
+                        return _original_topk(metrics, topk_mask)
+                    _assigner.select_topk_candidates = _patched_topk
 
                 print("  YOLO detection loss initialized (v8DetectionLoss)")
             except Exception as e:
