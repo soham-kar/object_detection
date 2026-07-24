@@ -14,6 +14,7 @@ from ..models.wrnet import WRDNet
 from ..utils.config import Config
 from .losses import WRDNetLoss
 from .optimizer import build_optimizer, build_scheduler
+from ..domain_adaptation.fda import FDATransform
 
 
 class WRDNetTrainer:
@@ -55,6 +56,29 @@ class WRDNetTrainer:
         # Training state
         self.current_epoch = 0
         self.global_step = 0
+
+        # FDA transform (input-level domain adaptation)
+        self.use_fda = getattr(config, 'use_fda', False)
+        self.fda_start_epoch = getattr(config, 'fda_start_epoch', 30)
+        self.fda_transform = None
+        if self.use_fda:
+            self.fda_transform = FDATransform(beta=0.01)
+            print(f"  FDA enabled (start epoch: {self.fda_start_epoch})")
+
+    def _get_fda_beta(self, epoch: int) -> float:
+        """Get FDA beta for current epoch from schedule."""
+        schedule = getattr(self.config, 'fda_beta_schedule', None)
+        if schedule is None:
+            return 0.01  # Default beta
+
+        beta = 0.0
+        for epoch_threshold, b in schedule:
+            if epoch >= epoch_threshold:
+                if isinstance(b, list):
+                    beta = b[0]  # Use lower bound of random range
+                else:
+                    beta = b
+        return beta
 
     def train(self, train_loader: DataLoader, val_loader: Optional[DataLoader] = None):
         """
@@ -136,6 +160,16 @@ class WRDNetTrainer:
                 real_batch = None
                 loss_batch = synth_batch
 
+            # Apply FDA (input-level domain adaptation) if enabled
+            if self.use_fda and self.fda_transform is not None:
+                if self.current_epoch >= self.fda_start_epoch and real_batch is not None:
+                    beta = self._get_fda_beta(self.current_epoch)
+                    if beta > 0:
+                        self.fda_transform.beta = beta
+                        synth_batch['image'] = self.fda_transform(
+                            synth_batch['image'], real_batch['image']
+                        )
+
             # Forward pass
             outputs = self.model.forward_train(synth_batch, real_batch)
 
@@ -173,6 +207,10 @@ class WRDNetTrainer:
         self.model.eval()
         total_loss = 0.0
 
+        # Collect predictions and targets for mAP
+        from ..evaluation.evaluator import WRDNetEvaluator
+        evaluator = WRDNetEvaluator(self.model, device=str(self.device))
+
         with torch.no_grad():
             for batch in tqdm(val_loader, desc="Validation"):
                 # Handle paired format if present
@@ -186,11 +224,28 @@ class WRDNetTrainer:
                 total_loss += losses['total'].item()
 
         avg_loss = total_loss / len(val_loader)
-        metrics = {'val_loss': avg_loss, 'mAP@50': 0.0}  # TODO: Compute actual mAP
+
+        # Compute mAP
+        try:
+            det_metrics = evaluator.evaluate_detection(val_loader)
+            mAP_50 = det_metrics.get('mAP@50', 0.0)
+            mAP_5095 = det_metrics.get('mAP@50:95', 0.0)
+        except Exception as e:
+            print(f"  WARNING: mAP computation failed: {e}")
+            mAP_50 = 0.0
+            mAP_5095 = 0.0
+
+        metrics = {
+            'val_loss': avg_loss,
+            'mAP@50': mAP_50,
+            'mAP@50:95': mAP_5095,
+        }
 
         # Log to tensorboard
         for key, value in metrics.items():
             self.writer.add_scalar(f'val/{key}', value, self.current_epoch)
+
+        print(f"  Val: loss={avg_loss:.4f}, mAP@50={mAP_50:.4f}, mAP@50:95={mAP_5095:.4f}")
 
         return metrics
 

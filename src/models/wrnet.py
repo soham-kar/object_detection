@@ -252,4 +252,17 @@ class WRDNet(nn.Module):
                 _, domain_loss = self.dct_alignment(features_all, domain_labels)
                 outputs['domain_loss'] = domain_loss
 
+            # FSG Consistency Loss
+            if self.use_fsg_consistency:
+                from ..domain_adaptation.fsg_consistency import (
+                    estimate_fog_density, fsg_consistency_loss
+                )
+                density_s = estimate_fog_density(self.dehazeformer, synth_img)
+                density_r = estimate_fog_density(self.dehazeformer, real_img)
+                fsg_cons = fsg_consistency_loss(
+                    outputs['alpha_s'], outputs['alpha_r'],
+                    density_s, density_r,
+                )
+                outputs['fsg_cons_loss'] = fsg_cons
+
         return outputs
