@@ -89,7 +89,7 @@ image = (
 # Link: https://drive.google.com/drive/folders/19j_Nd1vx1DxHKz0kFh3oUOXjlV4id42y
 GDRIVE_FOLDER_ID = "19j_Nd1vx1DxHKz0kFh3oUOXjlV4id42y"
 
-@app.function(image=image, volumes={"/data": DATA_VOLUME}, timeout=7200)
+@app.function(image=image, volumes={"/data": DATA_VOLUME}, timeout=7200, cpu=2, memory=4096)
 def download_from_gdrive():
     """
     Download all data from Google Drive to Modal Volume.
