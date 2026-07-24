@@ -50,7 +50,7 @@ CHECKPOINT_VOLUME = modal.Volume.from_name("wrdnet-checkpoints", create_if_missi
 # Docker image with all dependencies
 image = (
     modal.Image.debian_slim(python_version="3.11")
-    .apt_install("git", "libgl1-mesa-glx", "libglib2.0-0", "ffmpeg")
+    .apt_install("git", "libgl1-mesa-glx", "libglib2.0-0", "ffmpeg", "wget", "curl")
     .pip_install(
         "torch>=2.1.0",
         "torchvision>=0.16.0",
@@ -68,6 +68,7 @@ image = (
         "albumentations>=1.3.0",
         "numpy>=1.24.0",
         "Pillow>=10.0.0",
+        "gdown>=4.7.0",  # Google Drive downloader
     )
     .run_commands(
         "git clone https://github.com/IDKiro/DehazeFormer.git /tmp/DehazeFormer",
@@ -80,42 +81,73 @@ image = (
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Data Upload Function
+# Google Drive Download Function
 # ──────────────────────────────────────────────────────────────────────────────
 
-@app.function(image=image, volumes={"/data": DATA_VOLUME}, timeout=3600)
-def upload_data(local_data_path: str = "data"):
+# Your Google Drive folder ID (extracted from the sharing link)
+# Link: https://drive.google.com/drive/folders/19j_Nd1vx1DxHKz0kFh3oUOXjlV4id42y
+GDRIVE_FOLDER_ID = "19j_Nd1vx1DxHKz0kFh3oUOXjlV4id42y"
+
+@app.function(image=image, volumes={"/data": DATA_VOLUME}, timeout=7200)
+def download_from_gdrive():
     """
-    Upload local data directory to Modal Volume.
+    Download all data from Google Drive to Modal Volume.
     Run this once before training.
 
+    Your Google Drive folder must be shared as "Anyone with the link can view".
+
     Usage:
-        python modal_train.py upload
+        modal run modal_train.py::download
     """
-    import shutil
     import os
+    import subprocess
 
-    print(f"Uploading data from {local_data_path} to Modal Volume...")
+    print("Downloading data from Google Drive to Modal Volume...")
+    print(f"  Folder ID: {GDRIVE_FOLDER_ID}")
+    print(f"  Destination: /data/")
+    print()
 
-    # Copy each subdirectory to the volume
-    for item in os.listdir(local_data_path):
-        src = os.path.join(local_data_path, item)
-        dst = os.path.join("/data", item)
+    # Use gdown to download the entire folder
+    result = subprocess.run([
+        "gdown", "--folder", f"https://drive.google.com/drive/folders/{GDRIVE_FOLDER_ID}",
+        "-O", "/data",
+        "--remaining-ok",
+    ], capture_output=True, text=True)
 
-        if os.path.isdir(src):
-            if os.path.exists(dst):
-                shutil.rmtree(dst)
-            shutil.copytree(src, dst)
-            file_count = sum(len(files) for _, _, files in os.walk(dst))
-            print(f"  {item}/ → {file_count} files")
-        else:
-            shutil.copy2(src, dst)
-            print(f"  {item}")
+    print(result.stdout)
+    if result.returncode != 0:
+        print("STDERR:", result.stderr)
+        print("\nTrying alternative method (individual files)...")
+
+        # List files and download individually
+        result2 = subprocess.run([
+            "gdown", "--folder", f"https://drive.google.com/drive/folders/{GDRIVE_FOLDER_ID}",
+            "-O", "/data", "--no-cookies",
+        ], capture_output=True, text=True)
+        print(result2.stdout)
+        if result2.returncode != 0:
+            print("STDERR:", result2.stderr)
+            print("\nERROR: Could not download from Google Drive.")
+            print("Make sure the folder is shared as 'Anyone with the link can view'.")
+            return
+
+    # Verify download
+    if os.path.exists("/data"):
+        items = os.listdir("/data")
+        print(f"\nDownloaded {len(items)} items to /data:")
+        for item in sorted(items):
+            full = os.path.join("/data", item)
+            if os.path.isdir(full):
+                count = sum(len(files) for _, _, files in os.walk(full))
+                print(f"  {item}/ ({count} files)")
+            else:
+                size = os.path.getsize(full) / 1e6
+                print(f"  {item} ({size:.1f} MB)")
 
     # Commit the volume
     DATA_VOLUME.commit()
-    print(f"\nData uploaded to Modal Volume 'wrdnet-data'")
-    print(f"Total size: {sum(os.path.getsize(os.path.join(r, f)) for r, _, fs in os.walk('/data') for f in fs) / 1e9:.1f} GB")
+    print(f"\nData saved to Modal Volume 'wrdnet-data'")
+    print("You can now run training with: modal run modal_train.py --phase phase0")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -521,20 +553,20 @@ def alpha_depth_plot(phase: str = "phase1"):
 
 
 @app.local_entrypoint()
-def upload():
-    """Upload local data to Modal Volume.
+def download():
+    """Download data from Google Drive to Modal Volume.
 
     Usage:
-        python modal_train.py upload
+        modal run modal_train.py::download
     """
-    upload_data.remote(local_data_path="data")
+    download_from_gdrive.remote()
 
 
 if __name__ == "__main__":
     print("WRDNet Modal Training Script")
     print()
     print("Commands:")
-    print("  python modal_train.py upload                          # Upload data (once)")
+    print("  modal run modal_train.py::download                    # Download data from Google Drive (once)")
     print("  modal run modal_train.py --phase phase0               # Phase 0 training")
     print("  modal run modal_train.py --phase phase1 --resume      # Phase 1 training")
     print("  modal run modal_train.py::eval --phase phase0         # Evaluate")
@@ -543,3 +575,4 @@ if __name__ == "__main__":
     print("GPU: " + GPU_TYPE)
     print("Data volume: wrdnet-data")
     print("Checkpoint volume: wrdnet-checkpoints")
+    print(f"Google Drive folder: {GDRIVE_FOLDER_ID}")
