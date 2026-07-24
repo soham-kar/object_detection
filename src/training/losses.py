@@ -59,18 +59,18 @@ class WRDNetLoss(nn.Module):
                     return _original_bbox_decode(anchor_points, pred_distri)
                 self.yolo_loss.bbox_decode = _patched_bbox_decode
 
-                # Monkey-patch assigner to force all tensors to correct device
+                # Monkey-patch preprocess on v8DetectionLoss (not assigner)
+                # preprocess creates gt_bboxes/gt_labels on CPU — move to GPU
+                _original_preprocess = self.yolo_loss.preprocess
+                def _patched_preprocess(targets, batch_size, scale_tensor):
+                    out = _original_preprocess(targets, batch_size, scale_tensor)
+                    dev = scale_tensor.device if isinstance(scale_tensor, torch.Tensor) else self.yolo_loss.device
+                    return out.to(dev)
+                self.yolo_loss.preprocess = _patched_preprocess
+
+                # Monkey-patch assigner methods for device sync
                 if hasattr(self.yolo_loss, 'assigner'):
                     _assigner = self.yolo_loss.assigner
-                    
-                    # Patch preprocess to move output to assigner's device
-                    _original_preprocess = _assigner.preprocess
-                    def _patched_preprocess(targets, batch_size, scale_tensor):
-                        out = _original_preprocess(targets, batch_size, scale_tensor)
-                        # Move output to the device of scale_tensor
-                        dev = scale_tensor.device if isinstance(scale_tensor, torch.Tensor) else _assigner.device
-                        return out.to(dev)
-                    _assigner.preprocess = _patched_preprocess
 
                     # Patch select_candidates_in_gts
                     _original_select = _assigner.select_candidates_in_gts
