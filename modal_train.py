@@ -589,15 +589,21 @@ def upload():
 
 
 if __name__ == "__main__":
-    print("WRDNet Modal Training Script")
-    print()
-    print("Commands:")
-    print("  python modal_train.py upload                          # Upload data from local (once)")
-    print("  modal run modal_train.py --phase phase0               # Phase 0 training")
-    print("  modal run modal_train.py --phase phase1 --resume      # Phase 1 training")
-    print("  modal run modal_train.py::eval --phase phase0         # Evaluate")
-    print("  modal run modal_train.py::alpha_depth_plot --phase 1  # α vs depth plot")
-    print()
-    print("GPU: " + GPU_TYPE)
-    print("Data volume: wrdnet-data")
-    print("Checkpoint volume: wrdnet-checkpoints")
+    import sys
+
+    if len(sys.argv) > 1 and sys.argv[1] == "upload":
+        # python modal_train.py upload
+        upload_local(local_data_path="data")
+    else:
+        print("WRDNet Modal Training Script")
+        print()
+        print("Commands:")
+        print("  python modal_train.py upload                          # Upload data from local (once)")
+        print("  modal run modal_train.py --phase phase0               # Phase 0 training")
+        print("  modal run modal_train.py --phase phase1 --resume      # Phase 1 training")
+        print("  modal run modal_train.py::eval --phase phase0         # Evaluate")
+        print("  modal run modal_train.py::alpha_depth_plot --phase 1  # α vs depth plot")
+        print()
+        print("GPU: " + GPU_TYPE)
+        print("Data volume: wrdnet-data")
+        print("Checkpoint volume: wrdnet-checkpoints")
