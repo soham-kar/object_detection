@@ -105,72 +105,46 @@ def receive_data(files_data: list):
     DATA_VOLUME.commit()
 
 
-def upload_local(local_data_path: str = "data", batch_size_mb: int = 50):
+def upload_local(local_data_path: str = "data"):
     """
-    Upload local data directory to Modal Volume.
-    Sends files in batches to avoid memory issues.
+    Upload local data directory to Modal Volume using modal.Volume.put_directory.
+    This is Modal's native upload method — handles large directories efficiently.
 
     Usage:
         python modal_train.py upload
     """
     import os
-    import sys
 
-    print(f"Uploading data from {local_data_path} to Modal Volume...")
-    print(f"  Batch size: {batch_size_mb} MB")
-    print()
+    if not os.path.exists(local_data_path):
+        print(f"ERROR: {local_data_path} not found!")
+        return
 
-    # Collect all files
-    all_files = []
+    # Count files and total size
+    total_files = 0
     total_size = 0
     for root, dirs, files in os.walk(local_data_path):
         for fname in files:
-            full_path = os.path.join(root, fname)
-            rel_path = os.path.relpath(full_path, local_data_path)
-            size = os.path.getsize(full_path)
-            all_files.append((rel_path, full_path, size))
-            total_size += size
+            total_files += 1
+            total_size += os.path.getsize(os.path.join(root, fname))
 
-    print(f"Found {len(all_files)} files, total: {total_size / 1e9:.1f} GB")
+    print(f"Uploading {local_data_path} to Modal Volume 'wrdnet-data'...")
+    print(f"  Files: {total_files:,}")
+    print(f"  Size:  {total_size / 1e9:.1f} GB")
     print()
 
-    # Upload in batches
-    batch_bytes_limit = batch_size_mb * 1024 * 1024
-    current_batch = []
-    current_batch_size = 0
-    uploaded = 0
-    batch_num = 0
+    # Use Modal's native volume put — handles large directories efficiently
+    DATA_VOLUME.put_directory(
+        local_path=local_data_path,
+        remote_path="/",  # Put contents at root of volume
+    )
 
-    for rel_path, full_path, size in all_files:
-        # Read file
-        with open(full_path, 'rb') as f:
-            file_bytes = f.read()
+    # Commit to save
+    DATA_VOLUME.commit()
 
-        current_batch.append((rel_path, file_bytes))
-        current_batch_size += size
-        uploaded += size
-
-        # Send batch when it reaches the size limit
-        if current_batch_size >= batch_bytes_limit:
-            batch_num += 1
-            print(f"  Batch {batch_num}: {len(current_batch)} files, "
-                  f"{current_batch_size / 1e6:.1f} MB "
-                  f"({uploaded / total_size * 100:.1f}% done)")
-            receive_data.remote(current_batch)
-            current_batch = []
-            current_batch_size = 0
-
-    # Send remaining files
-    if current_batch:
-        batch_num += 1
-        print(f"  Batch {batch_num}: {len(current_batch)} files, "
-              f"{current_batch_size / 1e6:.1f} MB "
-              f"({uploaded / total_size * 100:.1f}% done)")
-        receive_data.remote(current_batch)
-
-    print(f"\nUpload complete! {len(all_files)} files, {total_size / 1e9:.1f} GB")
-    print(f"Saved to Modal Volume 'wrdnet-data'")
-    print(f"You can now run: modal run modal_train.py --phase phase0")
+    print(f"\nUpload complete!")
+    print(f"  {total_files:,} files, {total_size / 1e9:.1f} GB")
+    print(f"  Saved to Modal Volume 'wrdnet-data'")
+    print(f"\nYou can now run: modal run modal_train.py --phase phase0")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
