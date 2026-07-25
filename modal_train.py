@@ -82,72 +82,95 @@ image = (
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Google Drive Download Function
+# Data Upload Function (from local machine)
 # ──────────────────────────────────────────────────────────────────────────────
 
-# Your Google Drive folder ID (extracted from the sharing link)
-# Link: https://drive.google.com/drive/folders/19j_Nd1vx1DxHKz0kFh3oUOXjlV4id42y
-GDRIVE_FOLDER_ID = "19j_Nd1vx1DxHKz0kFh3oUOXjlV4id42y"
-
-@app.function(image=image, volumes={"/data": DATA_VOLUME}, timeout=7200, cpu=2, memory=4096)
-def download_from_gdrive():
+@app.function(image=image, volumes={"/data": DATA_VOLUME}, timeout=14400, cpu=2, memory=8192)
+def receive_data(files_data: list):
     """
-    Download all data from Google Drive to Modal Volume.
-    Run this once before training.
+    Receive data files from local machine and save to Modal Volume.
+    Called by upload_local() which sends files in chunks.
 
-    Your Google Drive folder must be shared as "Anyone with the link can view".
-
-    Usage:
-        modal run modal_train.py::download
+    Args:
+        files_data: list of (relative_path, file_bytes) tuples
     """
     import os
-    import subprocess
 
-    print("Downloading data from Google Drive to Modal Volume...")
-    print(f"  Folder ID: {GDRIVE_FOLDER_ID}")
-    print(f"  Destination: /data/")
+    for rel_path, file_bytes in files_data:
+        full_path = os.path.join("/data", rel_path)
+        os.makedirs(os.path.dirname(full_path), exist_ok=True)
+        with open(full_path, 'wb') as f:
+            f.write(file_bytes)
+
+    DATA_VOLUME.commit()
+
+
+def upload_local(local_data_path: str = "data", batch_size_mb: int = 50):
+    """
+    Upload local data directory to Modal Volume.
+    Sends files in batches to avoid memory issues.
+
+    Usage:
+        python modal_train.py upload
+    """
+    import os
+    import sys
+
+    print(f"Uploading data from {local_data_path} to Modal Volume...")
+    print(f"  Batch size: {batch_size_mb} MB")
     print()
 
-    # Use gdown to download the entire folder
-    result = subprocess.run([
-        "gdown", "--folder", f"https://drive.google.com/drive/folders/{GDRIVE_FOLDER_ID}",
-        "-O", "/data",
-    ], capture_output=True, text=True)
+    # Collect all files
+    all_files = []
+    total_size = 0
+    for root, dirs, files in os.walk(local_data_path):
+        for fname in files:
+            full_path = os.path.join(root, fname)
+            rel_path = os.path.relpath(full_path, local_data_path)
+            size = os.path.getsize(full_path)
+            all_files.append((rel_path, full_path, size))
+            total_size += size
 
-    print(result.stdout)
-    if result.returncode != 0:
-        print("STDERR:", result.stderr)
-        print("\nTrying alternative method (no cookies)...")
+    print(f"Found {len(all_files)} files, total: {total_size / 1e9:.1f} GB")
+    print()
 
-        # Try without cookies
-        result2 = subprocess.run([
-            "gdown", "--folder", f"https://drive.google.com/drive/folders/{GDRIVE_FOLDER_ID}",
-            "-O", "/data", "--no-cookies",
-        ], capture_output=True, text=True)
-        print(result2.stdout)
-        if result2.returncode != 0:
-            print("STDERR:", result2.stderr)
-            print("\nERROR: Could not download from Google Drive.")
-            print("Make sure the folder is shared as 'Anyone with the link can view'.")
-            return
+    # Upload in batches
+    batch_bytes_limit = batch_size_mb * 1024 * 1024
+    current_batch = []
+    current_batch_size = 0
+    uploaded = 0
+    batch_num = 0
 
-    # Verify download
-    if os.path.exists("/data"):
-        items = os.listdir("/data")
-        print(f"\nDownloaded {len(items)} items to /data:")
-        for item in sorted(items):
-            full = os.path.join("/data", item)
-            if os.path.isdir(full):
-                count = sum(len(files) for _, _, files in os.walk(full))
-                print(f"  {item}/ ({count} files)")
-            else:
-                size = os.path.getsize(full) / 1e6
-                print(f"  {item} ({size:.1f} MB)")
+    for rel_path, full_path, size in all_files:
+        # Read file
+        with open(full_path, 'rb') as f:
+            file_bytes = f.read()
 
-    # Commit the volume
-    DATA_VOLUME.commit()
-    print(f"\nData saved to Modal Volume 'wrdnet-data'")
-    print("You can now run training with: modal run modal_train.py --phase phase0")
+        current_batch.append((rel_path, file_bytes))
+        current_batch_size += size
+        uploaded += size
+
+        # Send batch when it reaches the size limit
+        if current_batch_size >= batch_bytes_limit:
+            batch_num += 1
+            print(f"  Batch {batch_num}: {len(current_batch)} files, "
+                  f"{current_batch_size / 1e6:.1f} MB "
+                  f"({uploaded / total_size * 100:.1f}% done)")
+            receive_data.remote(current_batch)
+            current_batch = []
+            current_batch_size = 0
+
+    # Send remaining files
+    if current_batch:
+        batch_num += 1
+        print(f"  Batch {batch_num}: {len(current_batch)} files, "
+              f"{current_batch_size / 1e6:.1f} MB "
+              f"({uploaded / total_size * 100:.1f}% done)")
+        receive_data.remote(current_batch)
+
+    print(f"\nUpload complete! {len(all_files)} files, {total_size / 1e9:.1f} GB")
+    print(f"Saved to Modal Volume 'wrdnet-data'")
+    print(f"You can now run: modal run modal_train.py --phase phase0")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -556,20 +579,20 @@ def alpha_depth_plot(phase: str = "phase1"):
 
 
 @app.local_entrypoint()
-def download():
-    """Download data from Google Drive to Modal Volume.
+def upload():
+    """Upload local data to Modal Volume.
 
     Usage:
-        modal run modal_train.py::download
+        python modal_train.py upload
     """
-    download_from_gdrive.remote()
+    upload_local(local_data_path="data")
 
 
 if __name__ == "__main__":
     print("WRDNet Modal Training Script")
     print()
     print("Commands:")
-    print("  modal run modal_train.py::download                    # Download data from Google Drive (once)")
+    print("  python modal_train.py upload                          # Upload data from local (once)")
     print("  modal run modal_train.py --phase phase0               # Phase 0 training")
     print("  modal run modal_train.py --phase phase1 --resume      # Phase 1 training")
     print("  modal run modal_train.py::eval --phase phase0         # Evaluate")
@@ -578,4 +601,3 @@ if __name__ == "__main__":
     print("GPU: " + GPU_TYPE)
     print("Data volume: wrdnet-data")
     print("Checkpoint volume: wrdnet-checkpoints")
-    print(f"Google Drive folder: {GDRIVE_FOLDER_ID}")
