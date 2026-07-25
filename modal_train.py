@@ -132,11 +132,9 @@ def upload_local(local_data_path: str = "data"):
     print(f"  Size:  {total_size / 1e9:.1f} GB")
     print()
 
-    # Use Modal's native volume put — handles large directories efficiently
-    DATA_VOLUME.put_directory(
-        local_path=local_data_path,
-        remote_path="/",  # Put contents at root of volume
-    )
+    # Use Modal's batch_upload — handles large directories efficiently
+    with DATA_VOLUME.batch_upload() as batch:
+        batch.put_directory(local_data_path, "/")
 
     # Commit to save
     DATA_VOLUME.commit()
