@@ -131,6 +131,9 @@ def upload_local(local_data_path: str = "data"):
     print(f"  Files: {total_files:,}")
     print(f"  Size:  {total_size / 1e9:.1f} GB")
     print()
+    print("  Uploading... (this may take a while, no progress bar available)")
+    print("  Keep this terminal open until you see 'Upload complete!'")
+    print()
 
     # Use Modal's batch_upload — handles large directories efficiently
     with DATA_VOLUME.batch_upload() as batch:
