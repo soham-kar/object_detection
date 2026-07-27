@@ -319,7 +319,7 @@ def train(
             else:
                 config.batch_size = 12  # A100
         if epochs is None:
-            config.epochs = 30
+            config.epochs = 20  # Phase 0: 20 epochs (~8.5hr on T4, fits 10hr timeout)
         if lr is None:
             config.lr = 1e-3
     elif phase == "phase1":
@@ -336,7 +336,7 @@ def train(
             else:
                 config.batch_size = 6   # A100
         if epochs is None:
-            config.epochs = 90
+            config.epochs = 120  # Phase 1: 120 epochs (more DA time, ~10hr on A100)
         if lr is None:
             config.lr = 5e-4
 
@@ -373,14 +373,30 @@ def train(
 
     # Resume from checkpoint if requested
     if resume:
-        ckpt_path = os.path.join(ckpt_dir, "best.pth")
-        if not os.path.exists(ckpt_path):
-            ckpt_path = os.path.join(ckpt_dir, f"epoch_{config.epochs}.pth")
-        if os.path.exists(ckpt_path):
-            print(f"Resuming from {ckpt_path}")
-            trainer.load_checkpoint(ckpt_path)
+        # Phase 1 resume: load Phase 0 checkpoint and reset BN stats
+        # (Phase 0 was trained with different batch size on T4)
+        if phase == "phase1":
+            ckpt_path = os.path.join("/checkpoints/phase0", "best.pth")
+            if not os.path.exists(ckpt_path):
+                ckpts = sorted([f for f in os.listdir("/checkpoints/phase0") if f.startswith("epoch_")])
+                if ckpts:
+                    ckpt_path = os.path.join("/checkpoints/phase0", ckpts[-1])
+            if os.path.exists(ckpt_path):
+                print(f"Loading Phase 0 checkpoint: {ckpt_path}")
+                print("  → Resetting BatchNorm stats for new batch size (T4→A100)")
+                trainer.load_checkpoint(ckpt_path, reset_bn=True)
+            else:
+                print("WARNING: No Phase 0 checkpoint found, starting from scratch.")
         else:
-            print("WARNING: No checkpoint found, starting from scratch.")
+            # Same-phase resume (e.g., interrupted training)
+            ckpt_path = os.path.join(ckpt_dir, "best.pth")
+            if not os.path.exists(ckpt_path):
+                ckpt_path = os.path.join(ckpt_dir, f"epoch_{config.epochs}.pth")
+            if os.path.exists(ckpt_path):
+                print(f"Resuming from {ckpt_path}")
+                trainer.load_checkpoint(ckpt_path)
+            else:
+                print("WARNING: No checkpoint found, starting from scratch.")
 
     # Train
     print(f"\nStarting {phase} training...")

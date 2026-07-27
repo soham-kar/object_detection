@@ -276,8 +276,14 @@ class WRDNetTrainer:
         torch.save(checkpoint, path)
         print(f"Saved checkpoint: {path}")
 
-    def load_checkpoint(self, path: str):
-        """Load model checkpoint."""
+    def load_checkpoint(self, path: str, reset_bn: bool = False):
+        """Load model checkpoint.
+        
+        Args:
+            path: path to checkpoint file
+            reset_bn: if True, reset BatchNorm running stats after loading.
+                      Use when switching batch sizes (e.g., T4 Phase 0 → A100 Phase 1).
+        """
         checkpoint = torch.load(path, map_location=self.device)
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
@@ -286,3 +292,15 @@ class WRDNetTrainer:
         self.current_epoch = checkpoint.get('epoch', 0)
         self.best_metric = checkpoint.get('best_metric', 0.0)
         print(f"Loaded checkpoint from {path}")
+        
+        if reset_bn:
+            # Reset BatchNorm running stats for new batch size
+            # running_mean → 0, running_var → 1 (identity normalization)
+            # Stats will re-calibrate from new batch size in first ~20 batches
+            import torch.nn as nn
+            bn_count = 0
+            for m in self.model.modules():
+                if isinstance(m, nn.BatchNorm2d):
+                    m.reset_running_stats()
+                    bn_count += 1
+            print(f"Reset {bn_count} BatchNorm running stats (new batch size re-calibration)")
