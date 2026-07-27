@@ -311,11 +311,11 @@ def train(
         config.use_dct_align = False
         config.use_fsg_consistency = False
         if batch_size is None:
-            # T4 (16GB): 4, L4 (24GB): 8, A100 (40GB): 12, A100 (80GB): 24
+            # T4 (16GB): 2, L4 (24GB): 6, A100 (40GB): 12, A100 (80GB): 24
             if gpu_mem_gb <= 16:
-                config.batch_size = 4   # T4
-            elif gpu_mem_gb <= 24:
-                config.batch_size = 8   # L4/A10G
+                config.batch_size = 2   # T4 (with AMP)
+            elif gpu_mem_gb < 24:
+                config.batch_size = 6   # L4/A10G
             else:
                 config.batch_size = 12  # A100
         if epochs is None:
@@ -330,9 +330,9 @@ def train(
         if batch_size is None:
             # DA uses 2x memory (paired batch: synth + real)
             if gpu_mem_gb <= 16:
-                config.batch_size = 2   # T4
-            elif gpu_mem_gb <= 24:
-                config.batch_size = 4   # L4/A10G
+                config.batch_size = 1   # T4 (with AMP)
+            elif gpu_mem_gb < 24:
+                config.batch_size = 3   # L4/A10G
             else:
                 config.batch_size = 6   # A100
         if epochs is None:
@@ -347,6 +347,9 @@ def train(
     os.makedirs(log_dir, exist_ok=True)
     config.checkpoint_dir = ckpt_dir
     config.log_dir = log_dir
+
+    # Reduce workers on Modal (limited CPU on free tier)
+    config.num_workers = 2
 
     print(f"  GPU Memory: {gpu_mem_gb:.1f} GB")
     print(f"  Batch size: {config.batch_size}")

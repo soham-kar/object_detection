@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
+from torch.cuda.amp import GradScaler, autocast
 from tqdm import tqdm
 
 from ..models.wrnet import WRDNet
@@ -56,6 +57,12 @@ class WRDNetTrainer:
         # Training state
         self.current_epoch = 0
         self.global_step = 0
+
+        # Mixed precision (AMP) — reduces memory by ~40%, enables larger batch sizes
+        self.use_amp = torch.cuda.is_available()
+        self.scaler = GradScaler(enabled=self.use_amp)
+        if self.use_amp:
+            print("  Mixed precision (AMP) enabled")
 
         # FDA transform (input-level domain adaptation)
         self.use_fda = getattr(config, 'use_fda', False)
@@ -170,21 +177,26 @@ class WRDNetTrainer:
                             synth_batch['image'], real_batch['image']
                         )
 
-            # Forward pass
-            outputs = self.model.forward_train(synth_batch, real_batch)
+            # Forward pass with mixed precision
+            with autocast(enabled=self.use_amp):
+                outputs = self.model.forward_train(synth_batch, real_batch)
 
-            # Compute loss
-            losses = self.criterion(outputs, loss_batch)
-            loss = losses['total']
+                # Compute loss
+                losses = self.criterion(outputs, loss_batch)
+                loss = losses['total']
 
-            # Backward pass
+            # Backward pass with gradient scaling
             self.optimizer.zero_grad()
-            loss.backward()
-
-            # Gradient clipping
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
-
-            self.optimizer.step()
+            if self.use_amp:
+                self.scaler.scale(loss).backward()
+                self.scaler.unscale_(self.optimizer)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
+            else:
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+                self.optimizer.step()
 
             # Logging
             total_loss += loss.item()
@@ -219,8 +231,9 @@ class WRDNetTrainer:
                 else:
                     batch = self._move_to_device(batch)
 
-                outputs = self.model.forward_train(batch)
-                losses = self.criterion(outputs, batch)
+                with autocast(enabled=self.use_amp):
+                    outputs = self.model.forward_train(batch)
+                    losses = self.criterion(outputs, batch)
                 total_loss += losses['total'].item()
 
         avg_loss = total_loss / len(val_loader)
