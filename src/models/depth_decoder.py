@@ -20,16 +20,19 @@ class DepthDecoder(nn.Module):
     """
     Progressive upsampling depth decoder.
 
-    Bottleneck: [B, 96, 80, 80] → 160×160 → 640×640
+    Bottleneck: [B, 96, H/4, W/4] → H/2×W/2 → H×W (dynamic)
 
     Args:
         bottleneck_channels: channels from DehazeFormer bottleneck (default 96 for T variant)
+        output_size: final upsampling target (default 640 for YOLO input)
     """
 
-    def __init__(self, bottleneck_channels: int = 96):
+    def __init__(self, bottleneck_channels: int = 96, output_size: int = 640):
         super().__init__()
 
-        # Stage 1: 80×80 → 160×160 (2× upsampling)
+        self.output_size = output_size
+
+        # Stage 1: bottleneck → 2× upsampling
         self.up1 = nn.Sequential(
             nn.ConvTranspose2d(bottleneck_channels, 64, kernel_size=2, stride=2),
             nn.BatchNorm2d(64),
@@ -66,5 +69,6 @@ class DepthDecoder(nn.Module):
         x = self.up1(bottleneck)     # [B, 64, 160, 160]
         x = self.refine(x)           # [B, 16, 160, 160]
         depth_160 = self.output(x)   # [B, 1, 160, 160]
-        depth_640 = F.interpolate(depth_160, size=(640, 640), mode='bilinear', align_corners=False)
+        depth_640 = F.interpolate(depth_160, size=(self.output_size, self.output_size),
+                                  mode='bilinear', align_corners=False)
         return depth_160, depth_640

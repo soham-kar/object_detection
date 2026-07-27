@@ -57,7 +57,8 @@ class WRDNet(nn.Module):
                 depth_channels=16,
                 use_cdmsa=use_cdmsa,
             )
-            self.depth_decoder = DepthDecoder(bottleneck_channels=96)
+            detect_size = getattr(config, 'input_size_detect', 640)
+            self.depth_decoder = DepthDecoder(bottleneck_channels=96, output_size=detect_size)
         else:
             self.fsg = FeatureSelectionGate(
                 channels_list=fsg_channels,
@@ -66,7 +67,8 @@ class WRDNet(nn.Module):
             self.depth_decoder = None
             if use_depth and not use_dg_fsg:
                 # Depth as auxiliary task only (E11)
-                self.depth_decoder = DepthDecoder(bottleneck_channels=96)
+                detect_size = getattr(config, 'input_size_detect', 640)
+                self.depth_decoder = DepthDecoder(bottleneck_channels=96, output_size=detect_size)
 
         # DCT Alignment (training only)
         # Stage 2 raw features: [B, 48, 160, 160] from DehazeFormer-T

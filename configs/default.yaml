@@ -5,7 +5,7 @@ model:
   dehazeformer_variant: 'T'
   yolo_variant: 's'
   pretrained: true
-  input_size_dehaze: 320
+  input_size_dehaze: 480   # DehazeFormer resolution (320→480 for better dehazing)
   input_size_detect: 640
   fsg_channels: [256, 256, 512]  # P3, P4, P5 channels (verified from YOLOv11s)
   use_depth: true
