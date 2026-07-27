@@ -43,8 +43,6 @@ class WRDNetEvaluator:
         Returns:
             metrics: dict with mAP@50, mAP@50:95, and per-class AP
         """
-        from ultralytics.utils.ops import non_max_suppression
-
         all_predictions = []  # List of (image_idx, class_id, conf, x1, y1, x2, y2)
         all_targets = []      # List of (image_idx, class_id, x1, y1, x2, y2)
 
@@ -101,12 +99,21 @@ class WRDNetEvaluator:
                     x2 = boxes[:, 0] + boxes[:, 2] / 2
                     y2 = boxes[:, 1] + boxes[:, 3] / 2
 
-                    for i in range(len(confs)):
+                    # Apply per-class NMS using torchvision
+                    from torchvision.ops import nms as tv_nms
+                    nms_boxes = torch.stack([x1, y1, x2, y2], dim=1)  # [N, 4]
+                    keep = tv_nms(nms_boxes, confs, iou_thres)
+                    nms_boxes = nms_boxes[keep]
+                    nms_confs = confs[keep]
+                    nms_cls = cls_ids[keep]
+
+                    for i in range(len(nms_confs)):
                         all_predictions.append({
                             'image_idx': img_idx,
-                            'class_id': cls_ids[i].item(),
-                            'conf': confs[i].item(),
-                            'bbox': [x1[i].item(), y1[i].item(), x2[i].item(), y2[i].item()],
+                            'class_id': nms_cls[i].item(),
+                            'conf': nms_confs[i].item(),
+                            'bbox': [nms_boxes[i, 0].item(), nms_boxes[i, 1].item(),
+                                     nms_boxes[i, 2].item(), nms_boxes[i, 3].item()],
                         })
 
                     # Collect targets
