@@ -107,19 +107,23 @@ def receive_data(files_data: list):
 
 def upload_local(local_data_path: str = "data"):
     """
-    Upload local data directory to Modal Volume using modal.Volume.put_directory.
-    This is Modal's native upload method — handles large directories efficiently.
+    Upload local data to Modal Volume using tar streaming.
+    Bundles all files into a single tar stream — much faster than
+    individual file uploads (avoids per-file overhead).
 
     Usage:
         python modal_train.py upload
     """
     import os
+    import time
+    import tarfile
+    import io
 
     if not os.path.exists(local_data_path):
         print(f"ERROR: {local_data_path} not found!")
         return
 
-    # Count files and total size
+    # Count files for info
     total_files = 0
     total_size = 0
     for root, dirs, files in os.walk(local_data_path):
@@ -131,19 +135,78 @@ def upload_local(local_data_path: str = "data"):
     print(f"  Files: {total_files:,}")
     print(f"  Size:  {total_size / 1e9:.1f} GB")
     print()
-    print("  Uploading... (this may take a while, no progress bar available)")
-    print("  Keep this terminal open until you see 'Upload complete!'")
+    print("  Method: tar streaming (bundles all files into one upload)")
+    print("  DO NOT close this terminal until you see 'Upload complete!'")
     print()
 
-    # Use Modal's batch_upload — handles large directories efficiently
-    with DATA_VOLUME.batch_upload() as batch:
-        batch.put_directory(local_data_path, "/")
+    start_time = time.time()
 
-    # Commit to save
+    # Create a tar archive — use /tmp (200GB free on your system)
+    tar_path = "/tmp/wrdnet_data.tar"
+
+    print("  Creating tar archive (this reads 110 GB from disk)...")
+    tar_start = time.time()
+
+    with tarfile.open(tar_path, "w") as tar:
+        tar.add(local_data_path, arcname=".")
+
+    tar_time = time.time() - tar_start
+    tar_size = os.path.getsize(tar_path)
+    print(f"  Tar created: {tar_size / 1e9:.1f} GB in {tar_time:.1f}s")
+
+    print("  Uploading to Modal Volume...")
+    upload_start = time.time()
+
+    with DATA_VOLUME.batch_upload() as batch:
+        batch.put_file(tar_path, "wrdnet_data.tar")
+
     DATA_VOLUME.commit()
 
+    upload_time = time.time() - upload_start
+
+    # Clean up local tar
+    os.remove(tar_path)
+
+    # Now extract on Modal
+    print("  Extracting tar on Modal Volume...")
+    extract_start = time.time()
+
+    @app.function(
+        image=image,
+        volumes={"/data": DATA_VOLUME},
+        timeout=3600,
+        cpu=2,
+        memory=4096,
+    )
+    def extract_tar():
+        import subprocess
+        import os
+        # Extract tar to volume root
+        subprocess.run(["tar", "xf", "/data/wrdnet_data.tar", "-C", "/data/"], check=True)
+        # Remove tar file to save space
+        os.remove("/data/wrdnet_data.tar")
+        DATA_VOLUME.commit()
+        # List top-level contents
+        items = os.listdir("/data")
+        print(f"  Extracted {len(items)} top-level items:")
+        for item in sorted(items):
+            full = os.path.join("/data", item)
+            if os.path.isdir(full):
+                count = sum(len(files) for _, _, files in os.walk(full))
+                print(f"    {item}/ ({count} files)")
+            else:
+                print(f"    {item}")
+
+    extract_tar.remote()
+
+    extract_time = time.time() - extract_start
+
+    total_time = time.time() - start_time
     print(f"\nUpload complete!")
-    print(f"  {total_files:,} files, {total_size / 1e9:.1f} GB")
+    print(f"  Tar creation: {tar_time:.1f}s")
+    print(f"  Upload:       {upload_time:.1f}s ({tar_size / (upload_time + 1e-8) / 1e6:.1f} MB/s)")
+    print(f"  Extraction:   {extract_time:.1f}s")
+    print(f"  Total time:   {total_time / 60:.1f} minutes")
     print(f"  Saved to Modal Volume 'wrdnet-data'")
     print(f"\nYou can now run: modal run modal_train.py --phase phase0")
 
@@ -222,7 +285,8 @@ def train(
     print(f"WRDNet Training on Modal")
     print(f"{'='*60}")
     print(f"  GPU: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU'}")
-    print(f"  GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB" if torch.cuda.is_available() else "")
+    if torch.cuda.is_available():
+        print(f"  GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
     print(f"  Phase: {phase}")
     print(f"  Config: {config_file}")
     print(f"{'='*60}\n")
@@ -238,13 +302,22 @@ def train(
     if lr is not None:
         config.lr = lr
 
+    # GPU memory-aware batch size selection
+    gpu_mem_gb = torch.cuda.get_device_properties(0).total_memory / 1e9 if torch.cuda.is_available() else 8
+
     # Phase-specific settings
     if phase == "phase0":
         config.use_fda = False
         config.use_dct_align = False
         config.use_fsg_consistency = False
         if batch_size is None:
-            config.batch_size = 12  # A100 can handle 12
+            # T4 (16GB): 4, L4 (24GB): 8, A100 (40GB): 12, A100 (80GB): 24
+            if gpu_mem_gb <= 16:
+                config.batch_size = 4   # T4
+            elif gpu_mem_gb <= 24:
+                config.batch_size = 8   # L4/A10G
+            else:
+                config.batch_size = 12  # A100
         if epochs is None:
             config.epochs = 30
         if lr is None:
@@ -255,7 +328,13 @@ def train(
         config.use_fsg_consistency = True
         config.real_datasets = ["acdc", "zurich"]
         if batch_size is None:
-            config.batch_size = 6  # DA uses 2x memory (paired)
+            # DA uses 2x memory (paired batch: synth + real)
+            if gpu_mem_gb <= 16:
+                config.batch_size = 2   # T4
+            elif gpu_mem_gb <= 24:
+                config.batch_size = 4   # L4/A10G
+            else:
+                config.batch_size = 6   # A100
         if epochs is None:
             config.epochs = 90
         if lr is None:
@@ -269,6 +348,7 @@ def train(
     config.checkpoint_dir = ckpt_dir
     config.log_dir = log_dir
 
+    print(f"  GPU Memory: {gpu_mem_gb:.1f} GB")
     print(f"  Batch size: {config.batch_size}")
     print(f"  Epochs: {config.epochs}")
     print(f"  Learning rate: {config.lr}")
