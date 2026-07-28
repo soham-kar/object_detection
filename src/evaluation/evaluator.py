@@ -63,22 +63,21 @@ class WRDNetEvaluator:
                 else:
                     raw_preds = det_output
 
-                # Apply NMS using ultralytics
-                # raw_preds is [B, 84, 8400] → need to convert to detection format
-                # ultralytics NMS expects [B, 84, num_anchors] where 84 = 4 bbox + 80 classes
-                # But we only have 8 classes. We need to handle this carefully.
-                # For now, use a simplified NMS approach.
+                # YOLO Detect head returns raw predictions in eval mode:
+                # [B, 4+nc, num_anchors] where first 4 are (cx, cy, w, h) in pixel coords
+                # relative to input size (640), NOT normalized [0,1]
+                # We need to normalize to [0,1] for IoU computation with GT (which is normalized)
 
                 B = raw_preds.shape[0]
+                input_size = 640  # YOLO input size (config.input_size_detect)
+
                 for b in range(B):
                     pred = raw_preds[b]  # [84, 8400]
-                    # Extract box coords (cx, cy, w, h) and class scores
-                    box_preds = pred[:4, :].T  # [8400, 4] cx, cy, w, h
+                    # Extract box coords (cx, cy, w, h) in PIXEL coordinates
+                    box_preds = pred[:4, :].T  # [8400, 4] cx, cy, w, h (pixels)
                     cls_preds = pred[4:, :].T  # [8400, 80] class scores
 
                     # We only care about our 8 classes (indices 0-7)
-                    # YOLO was pretrained on COCO (80 classes) but we train on 8.
-                    # Only look at class scores for indices 0-7.
                     cls_preds_8 = cls_preds[:, :8]  # [8400, 8]
 
                     # Use top-1 class and confidence from our 8 classes only
@@ -90,17 +89,26 @@ class WRDNetEvaluator:
                         img_idx += 1
                         continue
 
-                    boxes = box_preds[mask]  # [N, 4] cx, cy, w, h (normalized)
+                    boxes = box_preds[mask]  # [N, 4] cx, cy, w, h (pixels)
                     confs = max_conf[mask]   # [N]
                     cls_ids = max_cls[mask]  # [N]
 
-                    # Convert cx,cy,w,h to x1,y1,x2,y2 (normalized)
-                    x1 = boxes[:, 0] - boxes[:, 2] / 2
-                    y1 = boxes[:, 1] - boxes[:, 3] / 2
-                    x2 = boxes[:, 0] + boxes[:, 2] / 2
-                    y2 = boxes[:, 1] + boxes[:, 3] / 2
+                    # Normalize to [0,1] by dividing by input_size
+                    boxes_norm = boxes / input_size
 
-                    # Apply per-class NMS using torchvision
+                    # Convert cx,cy,w,h to x1,y1,x2,y2 (normalized)
+                    x1 = boxes_norm[:, 0] - boxes_norm[:, 2] / 2
+                    y1 = boxes_norm[:, 1] - boxes_norm[:, 3] / 2
+                    x2 = boxes_norm[:, 0] + boxes_norm[:, 2] / 2
+                    y2 = boxes_norm[:, 1] + boxes_norm[:, 3] / 2
+
+                    # Clamp to [0, 1]
+                    x1 = x1.clamp(0, 1)
+                    y1 = y1.clamp(0, 1)
+                    x2 = x2.clamp(0, 1)
+                    y2 = y2.clamp(0, 1)
+
+                    # Apply NMS using torchvision
                     from torchvision.ops import nms as tv_nms
                     nms_boxes = torch.stack([x1, y1, x2, y2], dim=1)  # [N, 4]
                     keep = tv_nms(nms_boxes, confs, iou_thres)
