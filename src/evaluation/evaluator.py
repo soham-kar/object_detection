@@ -28,7 +28,7 @@ class WRDNetEvaluator:
         self.model.to(self.device)
         self.model.eval()
 
-    def evaluate_detection(self, dataloader, conf_thres: float = 0.25,
+    def evaluate_detection(self, dataloader, conf_thres: float = 0.01,
                            iou_thres: float = 0.45) -> Dict[str, float]:
         """
         Compute mAP@50 and mAP@50:95 using a simplified COCO-style metric.
@@ -141,6 +141,17 @@ class WRDNetEvaluator:
                             })
 
                     img_idx += 1
+
+        # Debug: print prediction statistics
+        print(f"  [Debug] Predictions: {len(all_predictions)}, Targets: {len(all_targets)}")
+        if len(all_predictions) > 0:
+            confs = [p['conf'] for p in all_predictions[:100]]
+            print(f"  [Debug] Sample confs: min={min(confs):.4f}, max={max(confs):.4f}")
+            print(f"  [Debug] Sample pred bbox: {all_predictions[0]['bbox']}")
+        if len(all_targets) > 0:
+            print(f"  [Debug] Sample GT bbox: {all_targets[0]['bbox']}")
+            print(f"  [Debug] GT class IDs: {set(t['class_id'] for t in all_targets[:100])}")
+            print(f"  [Debug] Pred class IDs: {set(p['class_id'] for p in all_predictions[:100])}")
 
         # Compute mAP
         metrics = self._compute_map(all_predictions, all_targets)
