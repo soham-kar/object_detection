@@ -45,7 +45,7 @@ class WRDNetTrainer:
         # Checkpointing
         self.checkpoint_dir = getattr(config, 'checkpoint_dir', 'experiments/checkpoints')
         os.makedirs(self.checkpoint_dir, exist_ok=True)
-        self.save_interval = getattr(config, 'save_interval', 5)
+        self.save_interval = getattr(config, 'save_interval', 1)  # Save every epoch for preemption recovery
 
         # Early stopping
         self.early_stopping = getattr(config, 'early_stopping', False)
@@ -128,9 +128,17 @@ class WRDNetTrainer:
                 else:
                     self.scheduler.step()
 
-            # Save checkpoint
-            if (epoch + 1) % self.save_interval == 0:
-                self._save_checkpoint(f'epoch_{epoch+1}.pth')
+            # Save checkpoint every epoch (critical for Modal preemption recovery)
+            self._save_checkpoint(f'epoch_{epoch+1}.pth')
+            self._save_checkpoint('latest.pth')  # Always update latest
+            
+            # Commit to Modal volume if available (preemption recovery)
+            try:
+                import modal
+                vol = modal.Volume.from_name('wrdnet-checkpoints', create_if_missing=False)
+                vol.commit()
+            except:
+                pass  # Not on Modal, local training
 
         self.writer.close()
 
