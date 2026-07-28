@@ -108,9 +108,9 @@ class WRDNetTrainer:
             if val_loader is not None:
                 val_metrics = self._validate(val_loader)
 
-                # Early stopping
+                # Early stopping (use val_loss as metric — mAP takes many epochs to activate)
                 if self.early_stopping:
-                    current_metric = val_metrics.get(self.early_stopping_metric, 0.0)
+                    current_metric = -val_metrics.get('val_loss', 0.0)  # Negative because lower is better
                     if current_metric > self.best_metric:
                         self.best_metric = current_metric
                         self.patience_counter = 0

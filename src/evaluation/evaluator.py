@@ -76,12 +76,13 @@ class WRDNetEvaluator:
                     box_preds = pred[:4, :].T  # [8400, 4] cx, cy, w, h
                     cls_preds = pred[4:, :].T  # [8400, 80] class scores
 
-                    # We only care about our 8 classes (indices 0-7 in our mapping)
-                    # But YOLO was trained on COCO (80 classes).
-                    # For evaluation, use the max confidence across all classes
-                    # and map to our 8 classes if possible.
-                    # Simplified: use top-1 class and confidence
-                    max_conf, max_cls = cls_preds.max(dim=1)  # [8400]
+                    # We only care about our 8 classes (indices 0-7)
+                    # YOLO was pretrained on COCO (80 classes) but we train on 8.
+                    # Only look at class scores for indices 0-7.
+                    cls_preds_8 = cls_preds[:, :8]  # [8400, 8]
+
+                    # Use top-1 class and confidence from our 8 classes only
+                    max_conf, max_cls = cls_preds_8.max(dim=1)  # [8400]
 
                     # Filter by confidence
                     mask = max_conf > conf_thres
