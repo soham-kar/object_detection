@@ -222,7 +222,7 @@ def upload_local(local_data_path: str = "data"):
         "/data": DATA_VOLUME,
         "/checkpoints": CHECKPOINT_VOLUME,
     },
-    timeout=36000,  # 10 hours max
+    timeout=86400,  # 24 hours max (Modal's limit) — allows 30 epochs on T4
     memory=16384,   # 16 GB RAM
 )
 def train(
@@ -319,7 +319,7 @@ def train(
             else:
                 config.batch_size = 12  # A100
         if epochs is None:
-            config.epochs = 20  # Phase 0: 20 epochs (~8.5hr on T4, fits 10hr timeout)
+            config.epochs = 30  # Phase 0: 30 epochs (~13hr on T4, fits 24hr timeout)
         if lr is None:
             config.lr = 1e-3
     elif phase == "phase1":
