@@ -47,8 +47,10 @@ class WRDNetTrainer:
         os.makedirs(self.checkpoint_dir, exist_ok=True)
         self.save_interval = getattr(config, 'save_interval', 1)  # Save every epoch for preemption recovery
 
-        # Early stopping
-        self.early_stopping = getattr(config, 'early_stopping', False)
+        # Early stopping — disabled for Phase 0 (model needs full 30 epochs to learn)
+        # The detection head starts from COCO pretrained weights and needs time to
+        # adapt to our 8-class mapping. mAP stays near 0 for first 20+ epochs.
+        self.early_stopping = False  # Force disable — let all 30 epochs run
         self.early_stopping_patience = getattr(config, 'early_stopping_patience', 10)
         self.early_stopping_metric = getattr(config, 'early_stopping_metric', 'mAP@50')
         self.best_metric = 0.0
