@@ -43,4 +43,8 @@ Thumbs.db
 tensorboard/
 
 # Trash
-.Trash-1000/my_local_wrdnet-checkpoints/
+.Trash-1000/
+my_local_wrdnet-checkpoints/
+
+# Scripts with secrets (don't push to GitHub)
+upload_to_modal.py
