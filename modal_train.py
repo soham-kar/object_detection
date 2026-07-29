@@ -376,25 +376,38 @@ def train(
     # Resume from checkpoint if requested
     # Auto-resume: if checkpoint exists, always load it (preemption recovery)
     if phase == "phase1" and resume:
-        # Phase 1 resume: load Phase 0 checkpoint and reset BN stats
-        # (Phase 0 was trained with different batch size on T4)
-        ckpt_path = os.path.join("/checkpoints/phase0", "best.pth")
-        if not os.path.exists(ckpt_path):
-            # Find latest epoch checkpoint (sort numerically, not alphabetically)
+        # First check if Phase 1 already has checkpoints (resume mid-Phase 1)
+        phase1_latest = os.path.join(ckpt_dir, "latest.pth")
+        if not os.path.exists(phase1_latest):
             try:
-                ckpts = [f for f in os.listdir("/checkpoints/phase0") if f.startswith("epoch_") and f.endswith(".pth")]
+                ckpts = [f for f in os.listdir(ckpt_dir) if f.startswith("epoch_") and f.endswith(".pth")]
                 if ckpts:
-                    # Extract epoch number and sort numerically
                     ckpts.sort(key=lambda x: int(x.replace("epoch_", "").replace(".pth", "")))
-                    ckpt_path = os.path.join("/checkpoints/phase0", ckpts[-1])
+                    phase1_latest = os.path.join(ckpt_dir, ckpts[-1])
             except:
                 pass
-        if os.path.exists(ckpt_path):
-            print(f"Loading Phase 0 checkpoint: {ckpt_path}")
-            print("  → Resetting BatchNorm stats for new batch size (T4→A100)")
-            trainer.load_checkpoint(ckpt_path, reset_bn=True, strict=False)
+        
+        if os.path.exists(phase1_latest):
+            # Resume from existing Phase 1 checkpoint (mid-Phase 1 recovery)
+            print(f"Auto-resuming Phase 1 from {phase1_latest}")
+            trainer.load_checkpoint(phase1_latest)
         else:
-            print("WARNING: No Phase 0 checkpoint found, starting from scratch.")
+            # No Phase 1 checkpoint — load Phase 0 and reset BN stats
+            ckpt_path = os.path.join("/checkpoints/phase0", "best.pth")
+            if not os.path.exists(ckpt_path):
+                try:
+                    ckpts = [f for f in os.listdir("/checkpoints/phase0") if f.startswith("epoch_") and f.endswith(".pth")]
+                    if ckpts:
+                        ckpts.sort(key=lambda x: int(x.replace("epoch_", "").replace(".pth", "")))
+                        ckpt_path = os.path.join("/checkpoints/phase0", ckpts[-1])
+                except:
+                    pass
+            if os.path.exists(ckpt_path):
+                print(f"Loading Phase 0 checkpoint: {ckpt_path}")
+                print("  → Resetting BatchNorm stats for new batch size (T4→A100)")
+                trainer.load_checkpoint(ckpt_path, reset_bn=True, strict=False)
+            else:
+                print("WARNING: No Phase 0 checkpoint found, starting from scratch.")
     else:
         # Phase 0 or same-phase resume: auto-resume from latest checkpoint
         latest_path = os.path.join(ckpt_dir, "latest.pth")

@@ -43,4 +43,4 @@ Thumbs.db
 tensorboard/
 
 # Trash
-.Trash-1000/
+.Trash-1000/my_local_wrdnet-checkpoints/
