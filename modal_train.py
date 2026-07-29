@@ -333,8 +333,10 @@ def train(
                 config.batch_size = 1   # T4 (with AMP)
             elif gpu_mem_gb < 24:
                 config.batch_size = 3   # L4/A10G
+            elif gpu_mem_gb < 40:
+                config.batch_size = 8   # A100-40GB (utilize full 40GB)
             else:
-                config.batch_size = 6   # A100
+                config.batch_size = 12  # A100-80GB or L40S
         if epochs is None:
             config.epochs = 120  # Phase 1: 120 epochs (more DA time, ~10hr on A100)
         if lr is None:
