@@ -297,9 +297,11 @@ class WRDNetTrainer:
         """
         checkpoint = torch.load(path, map_location=self.device)
         self.model.load_state_dict(checkpoint['model_state_dict'], strict=strict)
-        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        if self.scheduler and checkpoint.get('scheduler_state_dict'):
-            self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+        # Only load optimizer/scheduler if not strict (architecture changed → fresh optimizer)
+        if strict:
+            self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            if self.scheduler and checkpoint.get('scheduler_state_dict'):
+                self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
         self.current_epoch = checkpoint.get('epoch', 0)
         self.best_metric = checkpoint.get('best_metric', 0.0)
         print(f"Loaded checkpoint from {path}")
