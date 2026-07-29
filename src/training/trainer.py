@@ -286,16 +286,17 @@ class WRDNetTrainer:
         torch.save(checkpoint, path)
         print(f"Saved checkpoint: {path}")
 
-    def load_checkpoint(self, path: str, reset_bn: bool = False):
+    def load_checkpoint(self, path: str, reset_bn: bool = False, strict: bool = True):
         """Load model checkpoint.
         
         Args:
             path: path to checkpoint file
             reset_bn: if True, reset BatchNorm running stats after loading.
                       Use when switching batch sizes (e.g., T4 Phase 0 → A100 Phase 1).
+            strict: if False, allow missing/extra keys (for architecture changes between phases).
         """
         checkpoint = torch.load(path, map_location=self.device)
-        self.model.load_state_dict(checkpoint['model_state_dict'])
+        self.model.load_state_dict(checkpoint['model_state_dict'], strict=strict)
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         if self.scheduler and checkpoint.get('scheduler_state_dict'):
             self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])

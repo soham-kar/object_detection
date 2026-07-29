@@ -380,13 +380,19 @@ def train(
         # (Phase 0 was trained with different batch size on T4)
         ckpt_path = os.path.join("/checkpoints/phase0", "best.pth")
         if not os.path.exists(ckpt_path):
-            ckpts = sorted([f for f in os.listdir("/checkpoints/phase0") if f.startswith("epoch_")])
-            if ckpts:
-                ckpt_path = os.path.join("/checkpoints/phase0", ckpts[-1])
+            # Find latest epoch checkpoint (sort numerically, not alphabetically)
+            try:
+                ckpts = [f for f in os.listdir("/checkpoints/phase0") if f.startswith("epoch_") and f.endswith(".pth")]
+                if ckpts:
+                    # Extract epoch number and sort numerically
+                    ckpts.sort(key=lambda x: int(x.replace("epoch_", "").replace(".pth", "")))
+                    ckpt_path = os.path.join("/checkpoints/phase0", ckpts[-1])
+            except:
+                pass
         if os.path.exists(ckpt_path):
             print(f"Loading Phase 0 checkpoint: {ckpt_path}")
             print("  → Resetting BatchNorm stats for new batch size (T4→A100)")
-            trainer.load_checkpoint(ckpt_path, reset_bn=True)
+            trainer.load_checkpoint(ckpt_path, reset_bn=True, strict=False)
         else:
             print("WARNING: No Phase 0 checkpoint found, starting from scratch.")
     else:
