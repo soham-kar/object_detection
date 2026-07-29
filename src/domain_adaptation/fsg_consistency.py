@@ -20,7 +20,7 @@ def estimate_fog_density(dehazeformer, image: torch.Tensor) -> torch.Tensor:
     """
     with torch.no_grad():
         bottleneck = dehazeformer.get_bottleneck(image)  # [B, 96, 80, 80]
-        density = bottleneck.norm(dim=[1, 2, 3])
+        density = torch.norm(bottleneck.flatten(1), dim=1)  # L2 norm over C,H,W
         density = density / (density.max() + 1e-8)
     return density
 
