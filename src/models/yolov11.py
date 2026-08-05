@@ -58,7 +58,7 @@ class YOLOv11sWrapper(nn.Module):
     NECK_START = 11    # First neck layer (Upsample)
     DETECT = 23        # Detection head
 
-    def __init__(self, pretrained: bool = True, num_classes: int = 8):
+    def __init__(self, pretrained: bool = True, num_classes: int = 8, replace_head: bool = False):
         super().__init__()
         self.pretrained = pretrained
         self.nc = num_classes  # Cityscapes/Foggy Driving classes (8)
@@ -86,12 +86,14 @@ class YOLOv11sWrapper(nn.Module):
         # Don't store yolo_loader as an attribute — it's not an nn.Module
         # and its .train() method would interfere with PyTorch's train mode
 
-        # ── Replace 80-class COCO head with 8-class head ──
-        # The pretrained Detect head outputs [B, 4+80, N] = 84 channels.
-        # We only need 8 classes, so replace the final class Conv2d in each
-        # cv3 branch with an 8-channel version. This focuses all detection
-        # capacity on our 8 classes instead of wasting it on 72 unused ones.
-        self._replace_detect_head(num_classes)
+        # ── Optionally replace 80-class COCO head with 8-class head ──
+        # DEFAULT: keep the 80-class COCO head. The evaluator only looks at
+        # classes 0-7, and the loss only supervises classes 0-7. Classes 8-79
+        # simply don't get gradients (they stay at COCO values).
+        # Replacing the head (replace_head=True) caused NaN in the class scores
+        # due to the randomly-initialized cv3 head diverging. Keep it OFF.
+        if replace_head:
+            self._replace_detect_head(num_classes)
 
         # Verified backbone channel dimensions (from actual model inspection)
         self.backbone_channels = {
