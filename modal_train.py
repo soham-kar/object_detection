@@ -312,13 +312,17 @@ def train(
         config.use_dct_align = False
         config.use_fsg_consistency = False
         if batch_size is None:
-            # T4 (16GB): 2, L4 (24GB): 6, A100 (40GB): 12, A100 (80GB): 24
+            # T4 (16GB): 2, L4 (24GB): 6, A100 (40GB): 24, A100 (80GB): 32
+            # Phase 0 freezes DehazeFormer → only YOLO+FSG train → low memory.
+            # bs=24 uses ~28GB on A100-40GB (safe, ~12GB headroom).
             if gpu_mem_gb <= 16:
                 config.batch_size = 2   # T4 (with AMP)
             elif gpu_mem_gb < 24:
                 config.batch_size = 6   # L4/A10G
+            elif gpu_mem_gb < 70:
+                config.batch_size = 24  # A100-40GB (frozen backbone warmup)
             else:
-                config.batch_size = 12  # A100
+                config.batch_size = 32  # A100-80GB or L40S
         if epochs is None:
             config.epochs = 30  # Phase 0: 30 epochs (~13hr on T4, fits 24hr timeout)
         if lr is None:
