@@ -326,7 +326,10 @@ def train(
         if epochs is None:
             config.epochs = 30  # Phase 0: 30 epochs (~13hr on T4, fits 24hr timeout)
         if lr is None:
-            config.lr = 1e-3
+            # The 8-class head is RANDOMLY initialized (not COCO pretrained).
+            # A high LR (1e-3) makes the DFL box regression loss explode to NaN.
+            # Use a low LR so the new head learns stably.
+            config.lr = 1e-4
     elif phase == "phase1":
         config.use_fda = True
         config.use_dct_align = True
