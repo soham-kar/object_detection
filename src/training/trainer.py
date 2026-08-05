@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
-from torch.cuda.amp import GradScaler, autocast
+from torch.cuda.amp import autocast
 from tqdm import tqdm
 
 from ..models.wrnet import WRDNet
@@ -60,15 +60,18 @@ class WRDNetTrainer:
         self.current_epoch = 0
         self.global_step = 0
 
-        # Mixed precision (AMP) — ENABLED for A100 tensor-core speed.
-        # A 12M-param model runs ~20x faster in FP16 on A100 than FP32.
-        # IMPORTANT: AMP's GradScaler breaks if a NaN loss is replaced with a
-        # detached tensor (no gradient connection → "No inf checks recorded").
-        # Instead, we SKIP the optimizer step on NaN batches (see _train_epoch).
+        # Mixed precision (AMP) — ENABLED with BF16 for A100 tensor-core speed.
+        # A 12M-param model runs much faster in bf16 on A100 than FP32.
+        # WHY BF16 NOT FP16: the FSG gate conv (Conv2d(512, 64, 3x3)) sums
+        # ~4608 products of features ~8-10 magnitude → ~295k, which OVERFLOWS
+        # FP16's max of 65504 → inf → BatchNorm (inf-inf)=NaN → alpha NaN →
+        # fused NaN. BF16 has the SAME 8-bit exponent range as FP32 (max ~3e38),
+        # so it cannot overflow. BF16 also needs NO GradScaler (no loss scaling).
         self.use_amp = True
-        self.scaler = GradScaler(enabled=True)
+        self.amp_dtype = torch.bfloat16
+        self.scaler = None  # BF16 does not require gradient scaling
         if self.use_amp:
-            print("  Mixed precision (AMP) enabled")
+            print(f"  Mixed precision (AMP) enabled with {self.amp_dtype}")
 
         # FDA transform (input-level domain adaptation)
         self.use_fda = getattr(config, 'use_fda', False)
@@ -229,7 +232,7 @@ class WRDNetTrainer:
                         )
 
             # Forward pass with mixed precision
-            with autocast(enabled=self.use_amp):
+            with autocast(enabled=self.use_amp, dtype=self.amp_dtype):
                 outputs = self.model.forward_train(synth_batch, real_batch)
 
                 # Compute loss
@@ -237,7 +240,7 @@ class WRDNetTrainer:
                 loss = losses['total']
 
                 # NaN guard — if loss is NaN, SKIP this batch entirely.
-                # Do NOT replace with a detached tensor: with AMP, GradScaler
+                # Do NOT replace with a detached tensor: with FP16 AMP, GradScaler
                 # breaks when backward() produces no gradients ("No inf checks
                 # recorded"). Skipping the optimizer step is AMP-safe.
                 skip_step = False
@@ -261,19 +264,12 @@ class WRDNetTrainer:
                     if 'restored_s' in outputs:
                         print(f"    restored_s has_nan: {torch.isnan(outputs['restored_s']).any().item()}")
 
-            # Backward pass with gradient scaling
+            # Backward pass. BF16 does NOT use GradScaler (no loss scaling needed).
             if not skip_step:
                 self.optimizer.zero_grad()
-                if self.use_amp:
-                    self.scaler.scale(loss).backward()
-                    self.scaler.unscale_(self.optimizer)
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
-                    self.scaler.step(self.optimizer)
-                    self.scaler.update()
-                else:
-                    loss.backward()
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
-                    self.optimizer.step()
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+                self.optimizer.step()
 
                 # Logging
                 total_loss += loss.item()
@@ -311,7 +307,7 @@ class WRDNetTrainer:
                 else:
                     batch = self._move_to_device(batch)
 
-                with autocast(enabled=self.use_amp):
+                with autocast(enabled=self.use_amp, dtype=self.amp_dtype):
                     outputs = self.model.forward_train(batch)
                     losses = self.criterion(outputs, batch)
                 total_loss += losses['total'].item()
