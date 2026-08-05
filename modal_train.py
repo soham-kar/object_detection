@@ -311,6 +311,10 @@ def train(
         config.use_fda = False
         config.use_dct_align = False
         config.use_fsg_consistency = False
+        # Disable depth in Phase 0 — the depth decoder diverges to NaN with a
+        # randomly-initialized head. Depth is auxiliary; enable it in Phase 1.
+        config.use_depth = False
+        config.use_dg_fsg = False
         if batch_size is None:
             # T4 (16GB): 2, L4 (24GB): 6, A100 (40GB): 24, A100 (80GB): 32
             # Phase 0 freezes DehazeFormer → only YOLO+FSG train → low memory.
