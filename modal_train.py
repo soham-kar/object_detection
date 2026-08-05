@@ -315,9 +315,11 @@ def train(
         # randomly-initialized head. Depth is auxiliary; enable it in Phase 1.
         config.use_depth = False
         config.use_dg_fsg = False
-        # Disable FSG in Phase 0 — isolate whether detection loss or FSG causes NaN.
-        # Feed YOLO's original features directly. Re-enable in Phase 1.
-        config.use_fsg = False
+        # FSG is ENABLED in Phase 0. The FSG bypass was a debugging isolation
+        # measure to find the NaN source (which was the 8-class head, now
+        # reverted to 80-class). With the detection loss stable, FSG can train
+        # to learn feature fusion from the start.
+        config.use_fsg = True
         if batch_size is None:
             # T4 (16GB): 2, L4 (24GB): 6, A100 (40GB): 24, A100 (80GB): 32
             # Phase 0 freezes DehazeFormer → only YOLO+FSG train → low memory.

@@ -60,12 +60,13 @@ class WRDNetTrainer:
         self.current_epoch = 0
         self.global_step = 0
 
-        # Mixed precision (AMP) — DISABLED to avoid GradScaler complexity.
-        # The model is only ~12M params; FP32 on A100 is fast and stable.
-        # AMP's GradScaler breaks when a NaN loss is replaced with a detached
-        # tensor (no gradient connection → "No inf checks recorded" error).
-        self.use_amp = False
-        self.scaler = GradScaler(enabled=False)
+        # Mixed precision (AMP) — ENABLED for A100 tensor-core speed.
+        # A 12M-param model runs ~20x faster in FP16 on A100 than FP32.
+        # IMPORTANT: AMP's GradScaler breaks if a NaN loss is replaced with a
+        # detached tensor (no gradient connection → "No inf checks recorded").
+        # Instead, we SKIP the optimizer step on NaN batches (see _train_epoch).
+        self.use_amp = True
+        self.scaler = GradScaler(enabled=True)
         if self.use_amp:
             print("  Mixed precision (AMP) enabled")
 
@@ -235,9 +236,13 @@ class WRDNetTrainer:
                 losses = self.criterion(outputs, loss_batch)
                 loss = losses['total']
 
-                # NaN guard — if loss is NaN, replace with a small finite value
-                # so the GradScaler stays consistent (do NOT skip the step).
+                # NaN guard — if loss is NaN, SKIP this batch entirely.
+                # Do NOT replace with a detached tensor: with AMP, GradScaler
+                # breaks when backward() produces no gradients ("No inf checks
+                # recorded"). Skipping the optimizer step is AMP-safe.
+                skip_step = False
                 if torch.isnan(loss) or torch.isinf(loss):
+                    skip_step = True
                     print(f"\n  [NaN] Epoch {self.current_epoch+1} batch {batch_idx}:")
                     for k, v in losses.items():
                         if isinstance(v, torch.Tensor):
@@ -255,34 +260,36 @@ class WRDNetTrainer:
                                     print(f"      {dk}: shape={dv.shape}, has_nan={torch.isnan(dv).any().item()}")
                     if 'restored_s' in outputs:
                         print(f"    restored_s has_nan: {torch.isnan(outputs['restored_s']).any().item()}")
-                    # Replace NaN loss with a small finite value to keep training alive
-                    loss = torch.tensor(1.0, device=loss.device, requires_grad=True)
 
             # Backward pass with gradient scaling
-            self.optimizer.zero_grad()
-            if self.use_amp:
-                self.scaler.scale(loss).backward()
-                self.scaler.unscale_(self.optimizer)
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
-                self.scaler.step(self.optimizer)
-                self.scaler.update()
+            if not skip_step:
+                self.optimizer.zero_grad()
+                if self.use_amp:
+                    self.scaler.scale(loss).backward()
+                    self.scaler.unscale_(self.optimizer)
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+                    self.scaler.step(self.optimizer)
+                    self.scaler.update()
+                else:
+                    loss.backward()
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+                    self.optimizer.step()
+
+                # Logging
+                total_loss += loss.item()
+                self.global_step += 1
+
+                if batch_idx % log_interval == 0:
+                    pbar.set_postfix({
+                        'loss': f"{loss.item():.4f}",
+                        'lr': f"{self.optimizer.param_groups[0]['lr']:.6f}",
+                    })
+                    for key, value in losses.items():
+                        if isinstance(value, torch.Tensor):
+                            self.writer.add_scalar(f'train/{key}', value.item(), self.global_step)
             else:
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
-                self.optimizer.step()
-
-            # Logging
-            total_loss += loss.item()
-            self.global_step += 1
-
-            if batch_idx % log_interval == 0:
-                pbar.set_postfix({
-                    'loss': f"{loss.item():.4f}",
-                    'lr': f"{self.optimizer.param_groups[0]['lr']:.6f}",
-                })
-                for key, value in losses.items():
-                    if isinstance(value, torch.Tensor):
-                        self.writer.add_scalar(f'train/{key}', value.item(), self.global_step)
+                # NaN batch — skip optimizer step, don't log
+                print(f"  [SKIP] Skipping optimizer step for NaN batch {batch_idx}")
 
         avg_loss = total_loss / len(train_loader)
         return avg_loss
