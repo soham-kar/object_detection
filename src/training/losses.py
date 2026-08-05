@@ -31,18 +31,6 @@ class WRDNetLoss(nn.Module):
         self.domain_warmup_epochs = getattr(config, 'domain_warmup_epochs', 0)
         self.current_epoch = 0
 
-    def set_epoch(self, epoch: int):
-        """Set current epoch for domain warmup scheduling."""
-        self.current_epoch = epoch
-
-    def _effective_lambda_domain(self) -> float:
-        """Return the domain loss weight, ramping up during warmup."""
-        if self.domain_warmup_epochs <= 0:
-            return self.lambda_domain
-        # Linear ramp from 0 to lambda_domain over warmup epochs
-        progress = min(1.0, self.current_epoch / self.domain_warmup_epochs)
-        return self.lambda_domain * progress
-
         self.restoration_loss = nn.MSELoss()
 
         # YOLO detection loss (from ultralytics)
@@ -152,6 +140,18 @@ class WRDNetLoss(nn.Module):
         if hasattr(yl, 'class_weights') and yl.class_weights is not None:
             if isinstance(yl.class_weights, torch.Tensor):
                 yl.class_weights = yl.class_weights.to(device)
+
+    def set_epoch(self, epoch: int):
+        """Set current epoch for domain warmup scheduling."""
+        self.current_epoch = epoch
+
+    def _effective_lambda_domain(self) -> float:
+        """Return the domain loss weight, ramping up during warmup."""
+        if self.domain_warmup_epochs <= 0:
+            return self.lambda_domain
+        # Linear ramp from 0 to lambda_domain over warmup epochs
+        progress = min(1.0, self.current_epoch / self.domain_warmup_epochs)
+        return self.lambda_domain * progress
 
     def silog_loss(
         self,
