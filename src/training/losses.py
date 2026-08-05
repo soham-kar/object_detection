@@ -306,9 +306,18 @@ class WRDNetLoss(nn.Module):
             dev = outputs['restored_s'].device if 'restored_s' in outputs else 'cpu'
             losses['rest'] = torch.tensor(0.0, device=dev)
 
-        # ── Depth loss (synthetic only — SILog) ──
+        # ── Depth loss (synthetic only — SmoothL1, more stable than SILog) ──
         if 'depth_s' in outputs and 'depth_gt' in batch and batch['depth_gt'] is not None:
-            losses['depth'] = self.silog_loss(outputs['depth_s'], batch['depth_gt'])
+            pred_d = outputs['depth_s']
+            gt_d = batch['depth_gt']
+            # Guard against NaN in prediction (prevents weight divergence from poisoning training)
+            if torch.isnan(pred_d).any() or torch.isinf(pred_d).any():
+                print("  [WARNING] depth_s contains NaN/Inf — zeroing depth loss this step")
+                dev = pred_d.device
+                losses['depth'] = torch.tensor(0.0, device=dev)
+            else:
+                # Use SmoothL1 (robust to outliers, no log instability)
+                losses['depth'] = F.smooth_l1_loss(pred_d, gt_d)
         else:
             dev = outputs['restored_s'].device if 'restored_s' in outputs else 'cpu'
             losses['depth'] = torch.tensor(0.0, device=dev)

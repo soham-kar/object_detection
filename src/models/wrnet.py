@@ -184,6 +184,11 @@ class WRDNet(nn.Module):
         if self.depth_decoder is not None:
             bottleneck_s = self.dehazeformer.get_bottleneck(synth_img)  # [B, 96, 80, 80]
             _, depth_s = self.depth_decoder(bottleneck_s)
+            # Guard: if depth decoder diverged to NaN, fall back to a constant
+            # (zeros) so it doesn't corrupt FSG → YOLO → detection loss.
+            if torch.isnan(depth_s).any() or torch.isinf(depth_s).any():
+                print("  [WARNING] depth_s NaN — replacing with zeros to protect FSG")
+                depth_s = torch.zeros_like(depth_s)
             outputs['depth_s'] = depth_s
 
         # CRITICAL FIX: YOLO backbone MUST get the ORIGINAL 640x640 foggy image,
