@@ -60,9 +60,12 @@ class WRDNetTrainer:
         self.current_epoch = 0
         self.global_step = 0
 
-        # Mixed precision (AMP) — reduces memory by ~40%, enables larger batch sizes
-        self.use_amp = torch.cuda.is_available()
-        self.scaler = GradScaler(enabled=self.use_amp)
+        # Mixed precision (AMP) — DISABLED to avoid GradScaler complexity.
+        # The model is only ~12M params; FP32 on A100 is fast and stable.
+        # AMP's GradScaler breaks when a NaN loss is replaced with a detached
+        # tensor (no gradient connection → "No inf checks recorded" error).
+        self.use_amp = False
+        self.scaler = GradScaler(enabled=False)
         if self.use_amp:
             print("  Mixed precision (AMP) enabled")
 
