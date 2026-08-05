@@ -106,11 +106,29 @@ class YOLOv11sWrapper(nn.Module):
 
         The Detect module has cv2 (box regression) and cv3 (class scores).
         cv3[i] ends with a Conv2d that outputs `nc` channels. We replace that
-        final Conv2d with a new one outputting `num_classes` channels, keeping
-        the backbone/neck weights (loaded via strict=False) intact.
+        final Conv2d with a new one outputting `num_classes` channels.
+
+        IMPORTANT: We initialize the new head from the COCO weights for the
+        overlapping classes. A randomly-initialized head produces extreme box
+        predictions → DFL loss explodes → gradient explosion → NaN. Copying
+        COCO weights for overlapping classes gives reasonable starting values.
         """
         import torch.nn as nn
         det = self.model.model[-1]  # Detect head (layer 23)
+
+        # COCO class index → our class index mapping (for overlapping classes)
+        # Our classes: 0=person,1=rider,2=car,3=truck,4=bus,5=train,6=motorcycle,7=bicycle
+        # COCO classes: 0=person,1=bicycle,2=car,3=motorcycle,5=bus,6=train,7=truck
+        # rider (our 1) has no exact COCO match → use person (COCO 0)
+        coco_to_ours = {
+            0: 0,   # person → person
+            1: 7,   # bicycle → bicycle
+            2: 2,   # car → car
+            3: 6,   # motorcycle → motorcycle
+            5: 4,   # bus → bus
+            6: 5,   # train → train
+            7: 3,   # truck → truck
+        }
 
         # Update nc attribute
         det.nc = num_classes
@@ -121,11 +139,23 @@ class YOLOv11sWrapper(nn.Module):
             # seq is a Sequential ending with Conv2d (the class projection)
             last_conv = seq[-1]
             in_ch = last_conv.in_channels
+            # Save the original COCO weights (80 classes)
+            orig_weight = last_conv.weight.data.clone()  # [80, in_ch, 1, 1]
+            orig_bias = last_conv.bias.data.clone() if last_conv.bias is not None else None
+
             # Create new Conv2d with num_classes output channels
             new_conv = nn.Conv2d(in_ch, num_classes, kernel_size=1)
-            # Initialize with small weights (random init is fine for new head)
+            # Initialize with small random weights
             nn.init.normal_(new_conv.weight, 0, 0.01)
             nn.init.constant_(new_conv.bias, 0.0)
+
+            # Copy COCO weights for overlapping classes
+            for coco_idx, our_idx in coco_to_ours.items():
+                if coco_idx < orig_weight.shape[0]:
+                    new_conv.weight.data[our_idx] = orig_weight[coco_idx]
+                    if orig_bias is not None:
+                        new_conv.bias.data[our_idx] = orig_bias[coco_idx]
+
             # Replace the last layer
             seq[-1] = new_conv
 
@@ -137,7 +167,8 @@ class YOLOv11sWrapper(nn.Module):
         if hasattr(det, 'no'):
             det.no = num_classes + det.reg_max * 4
 
-        print(f"[YOLOv11s] Replaced 80-class head with {num_classes}-class head")
+        print(f"[YOLOv11s] Replaced 80-class head with {num_classes}-class head "
+              f"(initialized from COCO weights for overlapping classes)")
 
     def get_backbone_features(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
         """
