@@ -232,6 +232,27 @@ class WRDNetTrainer:
                 losses = self.criterion(outputs, loss_batch)
                 loss = losses['total']
 
+                # NaN diagnostics — identify which loss component is NaN
+                if torch.isnan(loss) or torch.isinf(loss):
+                    print(f"\n  [NaN] Epoch {self.current_epoch+1} batch {batch_idx}:")
+                    for k, v in losses.items():
+                        if isinstance(v, torch.Tensor):
+                            print(f"    {k}: {v.item() if v.numel()==1 else v.shape}")
+                    # Check detections shape
+                    if 'detections_s' in outputs:
+                        det = outputs['detections_s']
+                        if isinstance(det, (tuple, list)):
+                            det = det[0]
+                        print(f"    detections_s shape: {det.shape}")
+                        print(f"    detections_s has_nan: {torch.isnan(det).any().item()}")
+                    if 'restored_s' in outputs:
+                        print(f"    restored_s has_nan: {torch.isnan(outputs['restored_s']).any().item()}")
+                    if 'depth_s' in outputs and outputs['depth_s'] is not None:
+                        print(f"    depth_s has_nan: {torch.isnan(outputs['depth_s']).any().item()}")
+                    # Skip this batch to avoid corrupting training
+                    self.optimizer.zero_grad()
+                    continue
+
             # Backward pass with gradient scaling
             self.optimizer.zero_grad()
             if self.use_amp:
