@@ -1,3 +1,4 @@
+
 """Stereo Depth Module for WRDNet — UDA-Compatible Depth Estimation.
 
 DESIGN (per mentor consensus):

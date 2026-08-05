@@ -254,8 +254,9 @@ def train(
     sys.path.insert(0, "/tmp/DehazeFormer")  # DehazeFormer module
     os.chdir(REPO)
 
-    # Pull latest code
-    subprocess.run(["git", "pull"], cwd=REPO, check=True)
+    # Sync to latest code (handles force-pushed/rewritten history)
+    subprocess.run(["git", "fetch", "origin"], cwd=REPO, check=True)
+    subprocess.run(["git", "reset", "--hard", "origin/main"], cwd=REPO, check=True)
 
     # Link data volume to project data directory
     if os.path.exists("data") and not os.path.islink("data"):
@@ -474,7 +475,9 @@ def evaluate(
     sys.path.insert(0, "/tmp/DehazeFormer")  # DehazeFormer module
     os.chdir(REPO)
 
-    subprocess.run(["git", "pull"], cwd=REPO, check=True)
+    # Sync to latest code (handles force-pushed/rewritten history)
+    subprocess.run(["git", "fetch", "origin"], cwd=REPO, check=True)
+    subprocess.run(["git", "reset", "--hard", "origin/main"], cwd=REPO, check=True)
 
     if os.path.exists("data") and not os.path.islink("data"):
         os.rename("data", "data_backup")
@@ -585,7 +588,9 @@ def plot_alpha_depth(phase: str = "phase1"):
     sys.path.insert(0, "/tmp/DehazeFormer")  # DehazeFormer module
     os.chdir(REPO)
 
-    subprocess.run(["git", "pull"], cwd=REPO, check=True)
+    # Sync to latest code (handles force-pushed/rewritten history)
+    subprocess.run(["git", "fetch", "origin"], cwd=REPO, check=True)
+    subprocess.run(["git", "reset", "--hard", "origin/main"], cwd=REPO, check=True)
 
     if not os.path.exists("data"):
         os.symlink("/data", "data")
