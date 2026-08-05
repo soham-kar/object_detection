@@ -268,7 +268,15 @@ class YOLOv11sWrapper(nn.Module):
         y[22] = layers[22](y[21])  # [B, 512, 20, 20]
 
         # L23: Detect head
-        detections = layers[23]([y[16], y[19], y[22]])
+        det = layers[23]
+        # Force the Detect head into training mode so it returns RAW predictions
+        # (list of [B, 4+nc, H, W] tensors), NOT the eval-mode decoded dict.
+        # If the head's training flag is False, it returns {boxes, scores, feats}
+        # which breaks the detection loss → constant huge loss → NaN.
+        was_training = det.training
+        det.train(self.training)
+        detections = det([y[16], y[19], y[22]])
+        det.train(was_training)
 
         return detections
 

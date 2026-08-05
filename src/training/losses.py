@@ -275,6 +275,14 @@ class WRDNetLoss(nn.Module):
                         batch_size=len(batch['bboxes']),
                         device=device,
                     )
+                    # v8DetectionLoss expects a single tensor [B, reg_max*4 + nc, N].
+                    # The head returns a dict {boxes: [B, reg_max*4, N], scores: [B, nc, N]}.
+                    # Concatenate boxes + scores along channel dim.
+                    if isinstance(det_s, dict):
+                        boxes = det_s['boxes']   # [B, 64, N]
+                        scores = det_s['scores'] # [B, 8, N]
+                        det_s = torch.cat([boxes, scores], dim=1)  # [B, 72, N]
+
                     # v8DetectionLoss returns (loss, loss_items)
                     det_loss_result = self.yolo_loss(det_s, yolo_batch)
                     if isinstance(det_loss_result, (tuple, list)):
