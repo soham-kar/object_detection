@@ -50,6 +50,9 @@ class WRDNet(nn.Module):
         use_depth = getattr(config, 'use_depth', False)
         use_dg_fsg = getattr(config, 'use_dg_fsg', False)
         use_cdmsa = getattr(config, 'use_cdmsa', True)
+        # If use_fsg is False, bypass FSG and feed YOLO's original features directly.
+        # This isolates whether the detection loss or the FSG is causing NaN.
+        self.use_fsg = getattr(config, 'use_fsg', True)
 
         if use_depth and use_dg_fsg:
             self.fsg = DepthGuidedFSG(
@@ -137,15 +140,20 @@ class WRDNet(nn.Module):
                 mode='bilinear', align_corners=False,
             )
 
-        # Feature Selection Gate
-        if isinstance(self.fsg, DepthGuidedFSG) and depth is not None:
-            fused_features, alpha_maps = self.fsg(
-                rest_features_up, orig_features, depth
-            )
+        # Feature Selection Gate (or bypass if use_fsg=False)
+        if self.use_fsg:
+            if isinstance(self.fsg, DepthGuidedFSG) and depth is not None:
+                fused_features, alpha_maps = self.fsg(
+                    rest_features_up, orig_features, depth
+                )
+            else:
+                fused_features, alpha_maps = self.fsg(
+                    rest_features_up, orig_features
+                )
         else:
-            fused_features, alpha_maps = self.fsg(
-                rest_features_up, orig_features
-            )
+            # Bypass FSG — feed YOLO's original features directly (isolation test)
+            fused_features = orig_features
+            alpha_maps = {name: torch.zeros_like(orig_features[name][:, :1]) for name in orig_features}
 
         if return_alpha:
             outputs['alpha_maps'] = alpha_maps
@@ -209,11 +217,16 @@ class WRDNet(nn.Module):
                 mode='bilinear', align_corners=False,
             )
 
-        # FSG
-        if isinstance(self.fsg, DepthGuidedFSG) and depth_s is not None:
-            fused_s, alpha_s = self.fsg(rest_features_s_up, orig_features_s, depth_s)
+        # FSG (or bypass if use_fsg=False)
+        if self.use_fsg:
+            if isinstance(self.fsg, DepthGuidedFSG) and depth_s is not None:
+                fused_s, alpha_s = self.fsg(rest_features_s_up, orig_features_s, depth_s)
+            else:
+                fused_s, alpha_s = self.fsg(rest_features_s_up, orig_features_s)
         else:
-            fused_s, alpha_s = self.fsg(rest_features_s_up, orig_features_s)
+            # Bypass FSG — feed YOLO's original features directly (isolation test)
+            fused_s = orig_features_s
+            alpha_s = {name: torch.zeros_like(orig_features_s[name][:, :1]) for name in orig_features_s}
 
         # --- DEBUG BLOCK ---
         if self.training:
@@ -253,13 +266,17 @@ class WRDNet(nn.Module):
                         mode='bilinear', align_corners=False,
                     )
 
-                if isinstance(self.fsg, DepthGuidedFSG):
-                    # Depth decoder works on any image
-                    bottleneck_r = self.dehazeformer.get_bottleneck(real_img)
-                    _, depth_r = self.depth_decoder(bottleneck_r)
-                    fused_r, alpha_r = self.fsg(rest_features_r_up, orig_features_r, depth_r)
+                if self.use_fsg:
+                    if isinstance(self.fsg, DepthGuidedFSG):
+                        # Depth decoder works on any image
+                        bottleneck_r = self.dehazeformer.get_bottleneck(real_img)
+                        _, depth_r = self.depth_decoder(bottleneck_r)
+                        fused_r, alpha_r = self.fsg(rest_features_r_up, orig_features_r, depth_r)
+                    else:
+                        fused_r, alpha_r = self.fsg(rest_features_r_up, orig_features_r)
                 else:
-                    fused_r, alpha_r = self.fsg(rest_features_r_up, orig_features_r)
+                    fused_r = orig_features_r
+                    alpha_r = {name: torch.zeros_like(orig_features_r[name][:, :1]) for name in orig_features_r}
 
                 detections_r = self.yolo.forward_neck_head(fused_r)
                 outputs['detections_r'] = detections_r
