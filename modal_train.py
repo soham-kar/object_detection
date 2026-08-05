@@ -430,7 +430,9 @@ def train(
         
         if os.path.exists(latest_path):
             print(f"Auto-resuming from {latest_path}")
-            trainer.load_checkpoint(latest_path)
+            loaded = trainer.load_checkpoint(latest_path)
+            if loaded is False:
+                print("  → Incompatible checkpoint (head class mismatch). Starting from scratch.")
         else:
             print("No checkpoint found, starting from scratch.")
 

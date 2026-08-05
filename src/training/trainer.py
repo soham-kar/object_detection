@@ -243,8 +243,14 @@ class WRDNetTrainer:
                         det = outputs['detections_s']
                         if isinstance(det, (tuple, list)):
                             det = det[0]
-                        print(f"    detections_s shape: {det.shape}")
-                        print(f"    detections_s has_nan: {torch.isnan(det).any().item()}")
+                        if isinstance(det, torch.Tensor):
+                            print(f"    detections_s shape: {det.shape}")
+                            print(f"    detections_s has_nan: {torch.isnan(det).any().item()}")
+                        elif isinstance(det, dict):
+                            print(f"    detections_s is dict with keys: {list(det.keys())}")
+                            for dk, dv in det.items():
+                                if isinstance(dv, torch.Tensor):
+                                    print(f"      {dk}: shape={dv.shape}, has_nan={torch.isnan(dv).any().item()}")
                     if 'restored_s' in outputs:
                         print(f"    restored_s has_nan: {torch.isnan(outputs['restored_s']).any().item()}")
                     if 'depth_s' in outputs and outputs['depth_s'] is not None:
@@ -354,7 +360,37 @@ class WRDNetTrainer:
             strict: if False, allow missing/extra keys (for architecture changes between phases).
         """
         checkpoint = torch.load(path, map_location=self.device)
-        self.model.load_state_dict(checkpoint['model_state_dict'], strict=strict)
+        ckpt_sd = checkpoint['model_state_dict']
+
+        # Compatibility check: verify the YOLO head class-count matches.
+        # If the checkpoint was trained with a different number of classes
+        # (e.g., old 80-class head vs new 8-class head), loading it would
+        # corrupt the head with garbage weights → NaN. Refuse to load.
+        try:
+            # Find the detect head's class projection weight in the checkpoint
+            head_key = None
+            for k in ckpt_sd.keys():
+                if 'model.23.cv3' in k and k.endswith('.weight'):
+                    head_key = k
+                    break
+            if head_key is not None:
+                ckpt_nc = ckpt_sd[head_key].shape[0]
+                # Find the current model's corresponding head weight
+                cur_head_key = None
+                for k in self.model.state_dict().keys():
+                    if 'model.23.cv3' in k and k.endswith('.weight'):
+                        cur_head_key = k
+                        break
+                if cur_head_key is not None:
+                    cur_nc = self.model.state_dict()[cur_head_key].shape[0]
+                    if ckpt_nc != cur_nc:
+                        print(f"  [WARNING] Checkpoint head has {ckpt_nc} classes but model has {cur_nc}. "
+                              f"Refusing to load incompatible checkpoint (would corrupt head → NaN).")
+                        return False
+        except Exception as e:
+            print(f"  [WARNING] Could not verify head compatibility: {e}")
+
+        self.model.load_state_dict(ckpt_sd, strict=strict)
         # Only load optimizer/scheduler if not strict (architecture changed → fresh optimizer)
         if strict:
             self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
