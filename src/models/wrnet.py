@@ -215,6 +215,19 @@ class WRDNet(nn.Module):
         else:
             fused_s, alpha_s = self.fsg(rest_features_s_up, orig_features_s)
 
+        # --- DEBUG BLOCK ---
+        if self.training:
+            # Check if fused_s is a dict or list/tuple
+            if isinstance(fused_s, dict):
+                p3_feat = fused_s.get('P3', list(fused_s.values())[0])
+            else:
+                p3_feat = fused_s[0] if isinstance(fused_s, (list, tuple)) else fused_s
+
+            print(f"[DBG] fused max: {p3_feat.max().item():.2f} | orig max: {orig_features_s['P3'].max().item():.2f} | rest max: {rest_features_s_up['P3'].max().item():.2f} | img max: {synth_img.max().item():.2f}")
+            if torch.isnan(p3_feat).any():
+                print("[DBG] >>> FUSED FEATURES ARE NAN <<<")
+        # --- END DEBUG BLOCK ---
+
         outputs['fused_s'] = fused_s
         outputs['alpha_s'] = alpha_s
 
