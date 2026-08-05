@@ -16,7 +16,7 @@ data:
   data_root: 'data'
   fog_density: '0.02'
   input_size: 640
-  real_datasets: ['acdc', 'zurich']
+  real_datasets: ['acdc']  # ONLY ACDC for DA training. Zurich is for evaluation only!
 
 training:
   phase: 'warmup'
