@@ -100,8 +100,14 @@ class WRDNetTrainer:
         epochs = getattr(self.config, 'epochs', 100)
         log_interval = getattr(self.config, 'log_interval', 100)
 
+        # Apply Phase 0 freezing (freeze DehazeFormer to speed up T4 training)
+        self._apply_phase_freeze()
+
         for epoch in range(self.current_epoch, epochs):
             self.current_epoch = epoch
+
+            # Update loss epoch for domain warmup
+            self.criterion.set_epoch(epoch)
 
             # Train one epoch
             train_loss = self._train_epoch(train_loader, log_interval)
@@ -143,6 +149,37 @@ class WRDNetTrainer:
                 pass  # Not on Modal, local training
 
         self.writer.close()
+
+    def _apply_phase_freeze(self):
+        """
+        Freeze/unfreeze model components based on training phase.
+
+        Phase 0 (warmup): Freeze DehazeFormer to speed up T4 training and
+        prevent random YOLO head gradients from destroying pretrained weights.
+        YOLO and FSG remain trainable.
+
+        Phase 1 (DA): Unfreeze everything for fine-tuning on A100.
+        """
+        phase = getattr(self.config, 'phase', 'warmup')
+        import torch.nn as nn
+
+        if phase == 'warmup':
+            # Freeze DehazeFormer
+            frozen = 0
+            for param in self.model.dehazeformer.parameters():
+                param.requires_grad = False
+                frozen += 1
+            print(f"  Phase 0: Frozen DehazeFormer ({frozen} params) to speed up T4 training")
+            # Ensure YOLO and FSG are trainable
+            for param in self.model.yolo.parameters():
+                param.requires_grad = True
+            for param in self.model.fsg.parameters():
+                param.requires_grad = True
+        else:
+            # Phase 1: unfreeze everything
+            for param in self.model.parameters():
+                param.requires_grad = True
+            print("  Phase 1: All components trainable (DehazeFormer unfrozen)")
 
     def _move_to_device(self, batch: dict) -> dict:
         """Move batch dict to device, handling tensor lists (bboxes)."""

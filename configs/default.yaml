@@ -29,12 +29,15 @@ training:
   scheduler: 'cosine'
   warmup_epochs: 5
 
-  # Loss weights
-  lambda_rest: 0.5
-  lambda_depth: 0.1
+  # Loss weights — reduced auxiliary weights so detection (weight 1.0) is prioritized
+  lambda_rest: 0.1      # Reduced from 0.5
+  lambda_depth: 0.05    # Reduced from 0.1
   lambda_entropy: 0.01
-  lambda_domain: 0.1
+  lambda_domain: 0.02   # Reduced from 0.1 (prevents instant MMD collapse)
   lambda_fsg: 0.01
+
+  # Domain warmup — linearly ramp lambda_domain from 0 to its value over first N epochs
+  domain_warmup_epochs: 10
 
   # Logging
   log_interval: 100

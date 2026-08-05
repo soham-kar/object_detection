@@ -117,8 +117,9 @@ class WRDNet(nn.Module):
             if return_depth:
                 outputs['depth'] = depth
 
-        # YOLO backbone features from RESTORED image
-        orig_features = self.yolo.get_backbone_features(restored)
+        # CRITICAL FIX: YOLO backbone features from ORIGINAL foggy image (640x640),
+        # NOT the restored image. YOLO needs original resolution/content for detection.
+        orig_features = self.yolo.get_backbone_features(x)
 
         # DehazeFormer encoder features (already projected to YOLO dims)
         # Returns {'P3': [B,256,320,320], 'P4': [B,512,160,160], 'P5': [B,1024,80,80]}
@@ -172,9 +173,9 @@ class WRDNet(nn.Module):
         outputs = {}
 
         # ── Synthetic path ──
-        synth_img = synth_input['image']
+        synth_img = synth_input['image']  # [B, 3, 640, 640] original foggy image
 
-        # DehazeFormer
+        # DehazeFormer (restoration branch)
         restored_s = self.dehazeformer(synth_img)
         outputs['restored_s'] = restored_s
 
@@ -185,8 +186,11 @@ class WRDNet(nn.Module):
             _, depth_s = self.depth_decoder(bottleneck_s)
             outputs['depth_s'] = depth_s
 
-        # YOLO features from restored image
-        orig_features_s = self.yolo.get_backbone_features(restored_s)
+        # CRITICAL FIX: YOLO backbone MUST get the ORIGINAL 640x640 foggy image,
+        # NOT the restored (dehazed) image. YOLO needs the original resolution
+        # and content to detect small objects. The restored image is only used
+        # for feature fusion via FSG.
+        orig_features_s = self.yolo.get_backbone_features(synth_img)
 
         # DehazeFormer encoder features (already projected: P3/P4/P5)
         rest_features_s = self.dehazeformer.get_encoder_features(synth_img)
@@ -219,7 +223,8 @@ class WRDNet(nn.Module):
 
             with torch.set_grad_enabled(self.use_fsg_consistency):
                 restored_r = self.dehazeformer(real_img)
-                orig_features_r = self.yolo.get_backbone_features(restored_r)
+                # CRITICAL FIX: YOLO backbone gets the ORIGINAL real foggy image
+                orig_features_r = self.yolo.get_backbone_features(real_img)
                 rest_features_r = self.dehazeformer.get_encoder_features(real_img)
 
                 rest_features_r_up = {}

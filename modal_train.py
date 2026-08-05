@@ -326,7 +326,7 @@ def train(
         config.use_fda = True
         config.use_dct_align = True
         config.use_fsg_consistency = True
-        config.real_datasets = ["acdc", "zurich"]
+        config.real_datasets = ["acdc"]  # ONLY ACDC for DA training. Zurich is for evaluation only!
         if batch_size is None:
             # DA uses 2x memory (paired batch: synth + real)
             if gpu_mem_gb <= 16:

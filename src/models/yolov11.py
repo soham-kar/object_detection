@@ -58,9 +58,10 @@ class YOLOv11sWrapper(nn.Module):
     NECK_START = 11    # First neck layer (Upsample)
     DETECT = 23        # Detection head
 
-    def __init__(self, pretrained: bool = True):
+    def __init__(self, pretrained: bool = True, num_classes: int = 8):
         super().__init__()
         self.pretrained = pretrained
+        self.nc = num_classes  # Cityscapes/Foggy Driving classes (8)
 
         # ── Build actual YOLOv11s from ultralytics ──
         try:
@@ -85,6 +86,13 @@ class YOLOv11sWrapper(nn.Module):
         # Don't store yolo_loader as an attribute — it's not an nn.Module
         # and its .train() method would interfere with PyTorch's train mode
 
+        # ── Replace 80-class COCO head with 8-class head ──
+        # The pretrained Detect head outputs [B, 4+80, N] = 84 channels.
+        # We only need 8 classes, so replace the final class Conv2d in each
+        # cv3 branch with an 8-channel version. This focuses all detection
+        # capacity on our 8 classes instead of wasting it on 72 unused ones.
+        self._replace_detect_head(num_classes)
+
         # Verified backbone channel dimensions (from actual model inspection)
         self.backbone_channels = {
             'P3': 256,   # 80×80  (stride 8)
@@ -92,10 +100,44 @@ class YOLOv11sWrapper(nn.Module):
             'P5': 512,   # 20×20  (stride 32)
         }
 
-        # Number of detection classes (COCO = 80, but we use 8 for foggy driving)
-        # The Detect head outputs [B, 4 + nc, num_anchors] per scale
-        # For COCO: 4 + 80 = 84 channels
-        self.nc = 80  # Will be updated if we swap the detection head
+    def _replace_detect_head(self, num_classes: int):
+        """
+        Replace the 80-class COCO detection head with an 8-class head.
+
+        The Detect module has cv2 (box regression) and cv3 (class scores).
+        cv3[i] ends with a Conv2d that outputs `nc` channels. We replace that
+        final Conv2d with a new one outputting `num_classes` channels, keeping
+        the backbone/neck weights (loaded via strict=False) intact.
+        """
+        import torch.nn as nn
+        det = self.model.model[-1]  # Detect head (layer 23)
+
+        # Update nc attribute
+        det.nc = num_classes
+
+        # Replace the final class Conv2d in each cv3 branch
+        for i in range(len(det.cv3)):
+            seq = det.cv3[i]
+            # seq is a Sequential ending with Conv2d (the class projection)
+            last_conv = seq[-1]
+            in_ch = last_conv.in_channels
+            # Create new Conv2d with num_classes output channels
+            new_conv = nn.Conv2d(in_ch, num_classes, kernel_size=1)
+            # Initialize with small weights (random init is fine for new head)
+            nn.init.normal_(new_conv.weight, 0, 0.01)
+            nn.init.constant_(new_conv.bias, 0.0)
+            # Replace the last layer
+            seq[-1] = new_conv
+
+        # Update model.nc attribute
+        self.model.nc = num_classes
+
+        # Recompute the Detect head's output channel count if needed
+        # (some ultralytics versions store this internally)
+        if hasattr(det, 'no'):
+            det.no = num_classes + det.reg_max * 4
+
+        print(f"[YOLOv11s] Replaced 80-class head with {num_classes}-class head")
 
     def get_backbone_features(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
         """

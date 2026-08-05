@@ -50,6 +50,10 @@ class FeatureSelectionGate(nn.Module):
                 nn.Conv2d(ch // 4, 1, kernel_size=3, padding=1),
                 nn.Sigmoid(),  # alpha in [0, 1]
             )
+            # Initialize the final alpha conv bias to -2.0 so Sigmoid(-2.0) ≈ 0.12.
+            # This forces the gate to TRUST ORIGINAL features early in training,
+            # preventing the detection loss from spiking on blurred restored features.
+            nn.init.constant_(gate[-2].bias, -2.0)
             self.gates.append(gate)
 
     def forward(

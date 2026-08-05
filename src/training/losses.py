@@ -27,6 +27,21 @@ class WRDNetLoss(nn.Module):
         self.lambda_entropy = getattr(config, 'lambda_entropy', 0.01)
         self.lambda_domain = getattr(config, 'lambda_domain', 0.1)
         self.lambda_fsg = getattr(config, 'lambda_fsg', 0.01)
+        # Domain warmup: ramp lambda_domain from 0 to its value over first N epochs
+        self.domain_warmup_epochs = getattr(config, 'domain_warmup_epochs', 0)
+        self.current_epoch = 0
+
+    def set_epoch(self, epoch: int):
+        """Set current epoch for domain warmup scheduling."""
+        self.current_epoch = epoch
+
+    def _effective_lambda_domain(self) -> float:
+        """Return the domain loss weight, ramping up during warmup."""
+        if self.domain_warmup_epochs <= 0:
+            return self.lambda_domain
+        # Linear ramp from 0 to lambda_domain over warmup epochs
+        progress = min(1.0, self.current_epoch / self.domain_warmup_epochs)
+        return self.lambda_domain * progress
 
         self.restoration_loss = nn.MSELoss()
 
@@ -339,7 +354,7 @@ class WRDNetLoss(nn.Module):
         total = total + self.lambda_rest * losses['rest']
         total = total + self.lambda_depth * losses['depth']
         total = total + self.lambda_entropy * losses['entropy']
-        total = total + self.lambda_domain * losses['domain']
+        total = total + self._effective_lambda_domain() * losses['domain']
         total = total + self.lambda_fsg * losses['fsg_cons']
         losses['total'] = total
 

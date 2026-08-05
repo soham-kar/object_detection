@@ -88,6 +88,9 @@ class DepthGuidedFSG(nn.Module):
             nn.Conv2d(channels // 4, 1, kernel_size=3, padding=1),
             nn.Sigmoid(),  # alpha in [0, 1]
         )
+        # Initialize alpha conv bias to -2.0 so Sigmoid(-2.0) ≈ 0.12.
+        # Forces the gate to TRUST ORIGINAL features early in training.
+        nn.init.constant_(gating_net[-2].bias, -2.0)
 
         return nn.ModuleDict({
             'cdmsa': cdmsa,
