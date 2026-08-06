@@ -43,7 +43,17 @@ class WRDNet(nn.Module):
         )
 
         # Detection encoder
-        self.yolo = YOLOv11sWrapper(pretrained=getattr(config, 'pretrained', True))
+        # Use the 8-class Cityscapes head (replace_head=True) so the head's
+        # class semantics MATCH the labels (0=person..7=bicycle). The 80-class
+        # COCO head has different meanings for indices 1-7 → the model must
+        # unlearn COCO semantics → slow convergence, overfitting, mAP stuck ~0.05.
+        # The 8-class head was previously disabled because it caused NaN in the
+        # FP16 era — but that NaN was the FSG gate overflow, now fixed with BF16.
+        self.yolo = YOLOv11sWrapper(
+            pretrained=getattr(config, 'pretrained', True),
+            num_classes=getattr(config, 'num_classes', 8),
+            replace_head=getattr(config, 'replace_head', True),
+        )
 
         # Feature fusion
         fsg_channels = getattr(config, 'fsg_channels', [256, 512, 1024])

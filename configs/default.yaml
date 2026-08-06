@@ -5,7 +5,9 @@ model:
   dehazeformer_variant: 'T'
   yolo_variant: 's'
   pretrained: true
-  input_size_dehaze: 480   # DehazeFormer resolution (320→480 for better dehazing)
+  num_classes: 8          # Cityscapes detection classes (0=person..7=bicycle)
+  replace_head: true      # Replace 80-class COCO head with 8-class head (semantics must match labels)
+  input_size_dehaze: 480   # DehazeFormer resolution (480 = sweet spot for fusion quality vs speed)
   input_size_detect: 640
   fsg_channels: [256, 256, 512]  # P3, P4, P5 channels (verified from YOLOv11s)
   use_depth: true
