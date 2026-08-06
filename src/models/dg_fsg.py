@@ -71,6 +71,9 @@ class DepthGuidedFSG(nn.Module):
             gate = self._make_gate(ch, depth_channels, prev_ch)
             self.gates.append(gate)
 
+        # Output BatchNorm per scale to normalize fused features before the YOLO neck
+        self.output_bns = self._make_output_bns()
+
     def _make_gate(self, channels: int, depth_channels: int, prev_channels: int = None) -> nn.Module:
         """Create a single DG-FSG gate for one scale."""
         from .cdmsa import CrossDimensionalMSA
@@ -96,6 +99,12 @@ class DepthGuidedFSG(nn.Module):
             'cdmsa': cdmsa,
             'gating': gating_net,
         })
+
+    def _make_output_bns(self):
+        """Output BatchNorm per scale to normalize fused features before the YOLO neck."""
+        return nn.ModuleList([
+            nn.BatchNorm2d(ch) for ch in self.channels_list
+        ])
 
     def forward(
         self,
@@ -152,6 +161,9 @@ class DepthGuidedFSG(nn.Module):
 
             # Fusion
             fused = alpha * f_rest + (1.0 - alpha) * f_orig
+
+            # Normalize fused features before they enter the YOLO neck
+            fused = self.output_bns[i](fused)
 
             fused_features[name] = fused
             alpha_maps[name] = alpha

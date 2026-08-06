@@ -56,6 +56,15 @@ class FeatureSelectionGate(nn.Module):
             nn.init.constant_(gate[-2].bias, -2.0)
             self.gates.append(gate)
 
+        # Output BatchNorm per scale to normalize fused features before they
+        # enter the YOLO neck. This stabilizes the feature magnitudes so the
+        # DFL in the detection head doesn't saturate at the box-edge bins.
+        # NOTE: The original YOLO backbone features also have magnitude ~7-10,
+        # so this is a defensive normalization, not a guaranteed fix.
+        self.output_bns = nn.ModuleList([
+            nn.BatchNorm2d(ch) for ch in channels_list
+        ])
+
     def forward(
         self,
         restored_features: Dict[str, torch.Tensor],
@@ -97,6 +106,10 @@ class FeatureSelectionGate(nn.Module):
 
             # Fuse
             fused = alpha * f_rest + (1.0 - alpha) * f_orig
+
+            # Normalize fused features before they enter the YOLO neck.
+            # Stabilizes magnitudes so the DFL doesn't saturate at box edges.
+            fused = self.output_bns[i](fused)
 
             fused_features[name] = fused
             alpha_maps[name] = alpha
