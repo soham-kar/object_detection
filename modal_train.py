@@ -315,11 +315,13 @@ def train(
         # randomly-initialized head. Depth is auxiliary; enable it in Phase 1.
         config.use_depth = False
         config.use_dg_fsg = False
-        # FSG is ENABLED in Phase 0. The FSG bypass was a debugging isolation
-        # measure to find the NaN source (which was the 8-class head, now
-        # reverted to 80-class). With the detection loss stable, FSG can train
-        # to learn feature fusion from the start.
-        config.use_fsg = True
+        # FSG is DISABLED in Phase 0. The FSG's CDMSA produces fused features
+        # with magnitude 37-62 (vs YOLO's ~8), which shatters the DFL in the
+        # detection head → x-coordinates collapse to the left edge. Since
+        # DehazeFormer is frozen in Phase 0, FSG has nothing useful to fuse.
+        # Bypass FSG so YOLO trains on clean features (mag ~8). Re-enable in
+        # Phase 1 with a magnitude clamp on the fused features.
+        config.use_fsg = False
         if batch_size is None:
             # T4 (16GB): 2, L4 (24GB): 6, A100 (40GB): 24, A100 (80GB): 32
             # Phase 0 freezes DehazeFormer → only YOLO+FSG train → low memory.
