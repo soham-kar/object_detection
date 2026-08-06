@@ -47,10 +47,14 @@ class WRDNetTrainer:
         os.makedirs(self.checkpoint_dir, exist_ok=True)
         self.save_interval = getattr(config, 'save_interval', 1)  # Save every epoch for preemption recovery
 
-        # Early stopping — disabled for Phase 0 (model needs full 30 epochs to learn)
-        # The detection head starts from COCO pretrained weights and needs time to
-        # adapt to our 8-class mapping. mAP stays near 0 for first 20+ epochs.
-        self.early_stopping = False  # Force disable — let all 30 epochs run
+        # Early stopping — ENABLED on mAP@50.
+        # NOTE: This was previously disabled with the comment "mAP stays near 0
+        # for first 20+ epochs" — that was written for the 80-class COCO head,
+        # which had mismatched class semantics and never learned. With the
+        # 8-class Cityscapes head, mAP peaks early (~epoch 6) then OVERFITS
+        # (mAP declines while val_loss keeps dropping). We must save best.pth
+        # by mAP and stop when mAP stops improving to avoid overfitting.
+        self.early_stopping = getattr(config, 'early_stopping', True)
         self.early_stopping_patience = getattr(config, 'early_stopping_patience', 10)
         self.early_stopping_metric = getattr(config, 'early_stopping_metric', 'mAP@50')
         self.best_metric = 0.0
@@ -123,17 +127,20 @@ class WRDNetTrainer:
             if val_loader is not None:
                 val_metrics = self._validate(val_loader)
 
-                # Early stopping (use val_loss as metric — mAP takes many epochs to activate)
+                # Early stopping on mAP@50 (higher is better).
+                # Save best.pth whenever mAP improves. This preserves the
+                # best-generalizing model even if later epochs overfit.
                 if self.early_stopping:
-                    current_metric = -val_metrics.get('val_loss', 0.0)  # Negative because lower is better
+                    current_metric = val_metrics.get(self.early_stopping_metric, 0.0)
                     if current_metric > self.best_metric:
                         self.best_metric = current_metric
                         self.patience_counter = 0
                         self._save_checkpoint('best.pth')
+                        print(f"  [BEST] New best {self.early_stopping_metric}={current_metric:.4f} at epoch {epoch}")
                     else:
                         self.patience_counter += 1
                         if self.patience_counter >= self.early_stopping_patience:
-                            print(f"Early stopping at epoch {epoch}")
+                            print(f"Early stopping at epoch {epoch} (no mAP improvement for {self.patience_counter} epochs)")
                             break
 
             # Scheduler step
