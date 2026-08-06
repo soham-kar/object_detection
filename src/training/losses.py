@@ -44,7 +44,13 @@ class WRDNetLoss(nn.Module):
                 # v8DetectionLoss reads model.args for hyperparameters (hyp)
                 if not hasattr(yolo_model, 'args') or isinstance(yolo_model.args, dict):
                     yolo_model.args = IterableSimpleNamespace(
-                        box=7.5, cls=0.5, dfl=1.5,
+                        # box gain lowered from 7.5 → 3.0: with ~150k boxes
+                        # predicted early, the box loss gradient is massive,
+                        # causing the model to collapse boxes to zero width to
+                        # minimize the CIoU penalty (DFL saturation at x=0).
+                        # Lowering box gain reduces this pressure so the model
+                        # learns to localize instead of shrinking boxes.
+                        box=3.0, cls=0.5, dfl=1.5,
                         box_pos_weight=-1.0, cls_pw=1.0, dfl_pw=1.0,
                     )
 
