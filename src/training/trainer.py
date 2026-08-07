@@ -251,7 +251,8 @@ class WRDNetTrainer:
                 # 16 DFL bins × 4 coords (x1, y1, x2, y2). If the x-coordinate
                 # DFL bins collapse to bin 0 (while y stays spread), that's the
                 # root cause of the x-collapse. Log the mean bin index per coord.
-                if self.global_step % 50 == 0 and 'detections_s' in outputs:
+                # NOTE: Logged once per epoch (every 500 steps) to avoid noise.
+                if self.global_step % 500 == 0 and 'detections_s' in outputs:
                     try:
                         det = outputs['detections_s']
                         if isinstance(det, (tuple, list)):
