@@ -359,7 +359,12 @@ def train(
         if epochs is None:
             config.epochs = 120  # Phase 1: 120 epochs (more DA time, ~10hr on A100)
         if lr is None:
-            config.lr = 5e-4
+            # Phase 1 LR lowered from 5e-4 → 2e-4. The 5x spike from Phase 0's
+            # 1e-4 caused confidence collapse (mAP 0.31→0.14, predictions
+            # 1600→300) as the optimizer aggressively ripped weights to satisfy
+            # DA losses, destroying the detection thresholds. A gentler LR lets
+            # DA align features without shattering the detection head.
+            config.lr = 2e-4
 
     # Checkpointing to Modal Volume
     ckpt_dir = f"/checkpoints/{phase}"
