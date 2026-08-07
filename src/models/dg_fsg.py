@@ -74,6 +74,10 @@ class DepthGuidedFSG(nn.Module):
         # Output BatchNorm per scale to normalize fused features before the YOLO neck
         self.output_bns = self._make_output_bns()
 
+        # Magnitude clamp on fused features before they enter the YOLO neck.
+        # Prevents DFL collapse (x-coords pinned to left edge) from CDMSA spikes.
+        self.fsg_clamp = 10.0
+
     def _make_gate(self, channels: int, depth_channels: int, prev_channels: int = None) -> nn.Module:
         """Create a single DG-FSG gate for one scale."""
         from .cdmsa import CrossDimensionalMSA
@@ -164,6 +168,9 @@ class DepthGuidedFSG(nn.Module):
 
             # Normalize fused features before they enter the YOLO neck
             fused = self.output_bns[i](fused)
+
+            # Clamp to safe magnitude range to prevent DFL collapse
+            fused = torch.clamp(fused, -self.fsg_clamp, self.fsg_clamp)
 
             fused_features[name] = fused
             alpha_maps[name] = alpha

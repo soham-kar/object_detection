@@ -65,6 +65,14 @@ class FeatureSelectionGate(nn.Module):
             nn.BatchNorm2d(ch) for ch in channels_list
         ])
 
+        # Magnitude clamp on fused features before they enter the YOLO neck.
+        # The FSG fusion (especially with CDMSA) can produce features with
+        # magnitude 37-62, which shatters the DFL in the detection head
+        # (x-coordinates collapse to the left edge). Clamping to a safe range
+        # (~YOLO's expected magnitude of 8) prevents this while still letting
+        # FSG learn adaptive fusion.
+        self.fsg_clamp = 10.0
+
     def forward(
         self,
         restored_features: Dict[str, torch.Tensor],
@@ -110,6 +118,11 @@ class FeatureSelectionGate(nn.Module):
             # Normalize fused features before they enter the YOLO neck.
             # Stabilizes magnitudes so the DFL doesn't saturate at box edges.
             fused = self.output_bns[i](fused)
+
+            # Clamp to a safe magnitude range to prevent DFL collapse.
+            # The CDMSA can produce spikes of 37-62; clamping to ±fsg_clamp
+            # keeps features in YOLO's expected range (~8).
+            fused = torch.clamp(fused, -self.fsg_clamp, self.fsg_clamp)
 
             fused_features[name] = fused
             alpha_maps[name] = alpha
