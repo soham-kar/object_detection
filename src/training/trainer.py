@@ -246,6 +246,32 @@ class WRDNetTrainer:
                 losses = self.criterion(outputs, loss_batch)
                 loss = losses['total']
 
+                # ── DFL diagnostic: check if x-bins collapse to bin 0 ──
+                # The detection head's 'boxes' output is [B, reg_max*4, N] =
+                # 16 DFL bins × 4 coords (x1, y1, x2, y2). If the x-coordinate
+                # DFL bins collapse to bin 0 (while y stays spread), that's the
+                # root cause of the x-collapse. Log the mean bin index per coord.
+                if self.global_step % 50 == 0 and 'detections_s' in outputs:
+                    try:
+                        det = outputs['detections_s']
+                        if isinstance(det, (tuple, list)):
+                            det = det[0]
+                        if isinstance(det, dict) and 'boxes' in det:
+                            boxes = det['boxes']  # [B, 64, N]
+                            reg_max = 16
+                            # Reshape to [B, 4, reg_max, N] and compute mean bin
+                            b, c, n = boxes.shape
+                            dist = boxes.view(b, 4, reg_max, n)  # [B, 4, 16, N]
+                            probs = torch.softmax(dist, dim=2)
+                            bins = torch.arange(reg_max, device=boxes.device).float()
+                            mean_bin = (probs * bins.view(1, 1, reg_max, 1)).sum(dim=2)  # [B, 4, N]
+                            mean_bin = mean_bin.mean(dim=(0, 2))  # [4] per coord
+                            print(f"  [DFL] mean bin per coord (x1,y1,x2,y2): "
+                                  f"[{mean_bin[0].item():.2f}, {mean_bin[1].item():.2f}, "
+                                  f"{mean_bin[2].item():.2f}, {mean_bin[3].item():.2f}]")
+                    except Exception as e:
+                        pass  # Diagnostic only — never break training
+
                 # NaN guard — if loss is NaN, SKIP this batch entirely.
                 # Do NOT replace with a detached tensor: with FP16 AMP, GradScaler
                 # breaks when backward() produces no gradients ("No inf checks
