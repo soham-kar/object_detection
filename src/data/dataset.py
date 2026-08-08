@@ -104,15 +104,29 @@ def build_dataloaders(config) -> Tuple[DataLoader, Optional[DataLoader]]:
     )
 
     # ── Build synthetic (labeled) training dataset ──
-    synth_train = FoggyCityscapesDataset(
-        root=os.path.join(data_root, 'cityscapes'),
-        split='train',
-        fog_density=fog_density,
-        input_size=input_size,
-        load_clear=True,
-        load_depth=getattr(config, 'use_depth', False),
-        config=config,
-    )
+    # Use multiple Cityscapes splits for training (train + val) since we
+    # evaluate on ACDC/Foggy Driving (different datasets), so we don't need
+    # to hold out Cityscapes val. NOTE: test split has NO labels (gtFine test
+    # is not public), so only train+val are usable.
+    train_splits = getattr(config, 'train_splits', ['train'])
+    synth_datasets = []
+    for split in train_splits:
+        ds = FoggyCityscapesDataset(
+            root=os.path.join(data_root, 'cityscapes'),
+            split=split,
+            fog_density=fog_density,
+            input_size=input_size,
+            load_clear=True,
+            load_depth=getattr(config, 'use_depth', False),
+            config=config,
+        )
+        if len(ds) > 0:
+            synth_datasets.append(ds)
+            print(f"  Synthetic split '{split}': {len(ds)} images")
+    if len(synth_datasets) == 1:
+        synth_train = synth_datasets[0]
+    else:
+        synth_train = ConcatDataset(synth_datasets)
 
     # ── Build validation dataset (ACDC val — real fog with labels) ──
     val_dataset = ACDCDataset(

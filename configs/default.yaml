@@ -18,6 +18,9 @@ data:
   data_root: 'data'
   fog_density: '0.02'
   input_size: 640
+  # Use Cityscapes train + val for training (we evaluate on ACDC/Foggy Driving,
+  # so we don't need to hold out Cityscapes val). test has no labels.
+  train_splits: ['train', 'val']
   real_datasets: ['acdc']  # ONLY ACDC for DA training. Zurich is for evaluation only!
 
 training:
