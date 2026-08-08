@@ -16,7 +16,10 @@ model:
 # Data configuration
 data:
   data_root: 'data'
-  fog_density: '0.02'
+  # Multi-density fog training: the dataset already contains beta_0.005,
+  # beta_0.01, beta_0.02 for every image. Training on all 3 densities triples
+  # the data (2975→8925) and makes the model robust to fog severity.
+  fog_density: ['0.005', '0.01', '0.02']
   input_size: 640
   # Use Cityscapes train + val for training (we evaluate on ACDC/Foggy Driving,
   # so we don't need to hold out Cityscapes val). test has no labels.

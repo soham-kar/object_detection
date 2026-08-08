@@ -48,11 +48,20 @@ class FoggyCityscapesDataset(Dataset):
     ):
         self.root = root
         self.split = split
-        self.fog_density = fog_density
         self.input_size = input_size
         self.load_clear = load_clear
         self.load_depth = load_depth
         self.config = config
+
+        # Support multiple fog densities for multi-density training.
+        # fog_density can be a single string OR a list of strings.
+        # The dataset already contains beta_0.005, beta_0.01, beta_0.02 for
+        # every image — training on all densities triples the data and makes
+        # the model robust to fog severity (a paper contribution).
+        if isinstance(fog_density, (list, tuple)):
+            self.fog_densities = list(fog_density)
+        else:
+            self.fog_densities = [fog_density]
 
         # Directory paths matching actual data layout
         self.foggy_dir = os.path.join(
@@ -90,12 +99,18 @@ class FoggyCityscapesDataset(Dataset):
                 continue
 
             for fname in sorted(os.listdir(city_dir)):
-                # Match specific fog density
-                suffix = f'_foggy_beta_{self.fog_density}.png'
-                if not fname.endswith(suffix):
+                # Match any of the configured fog densities
+                matched_density = None
+                for density in self.fog_densities:
+                    suffix = f'_foggy_beta_{density}.png'
+                    if fname.endswith(suffix):
+                        matched_density = density
+                        break
+                if matched_density is None:
                     continue
 
                 # Base name: e.g., "aachen_000000_000019"
+                suffix = f'_foggy_beta_{matched_density}.png'
                 base = fname.replace(suffix, '').replace('_leftImg8bit', '')
 
                 foggy_path = os.path.join(city_dir, fname)
@@ -121,6 +136,7 @@ class FoggyCityscapesDataset(Dataset):
                     'label': label_path if os.path.exists(label_path) else None,
                     'city': city,
                     'base': base,
+                    'fog_density': matched_density,
                 })
 
         return samples
