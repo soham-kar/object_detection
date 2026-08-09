@@ -1,6 +1,92 @@
 # III. Methodology
 
-## A. Problem Formulation
+## A. Research Gaps and Contributions
+
+A systematic review of the fog-removal and adverse-weather detection
+literature reveals several persistent limitations that motivate our work. We
+synthesize these gaps and state the corresponding contributions of WRDNet.
+
+### A.1 Identified Research Gaps
+
+**G1 — The sequential dehaze-then-detect paradigm is suboptimal.** Classical
+prior-based methods (Dark Channel Prior [He et al., 2011] and its variants
+[2015, 2016, 2018]) and early learning-based dehazers [2015, 2020] treat
+restoration as a standalone preprocessing step, feeding the dehazed image to a
+downstream detector. This decoupling ignores the fact that restoration errors
+propagate directly into detection: over-aggressive dehazing can hallucinate
+artifacts near the camera, while conservative restoration leaves distant
+objects obscured. The detector is forced to operate on a single, fixed
+restored representation that cannot adapt to the spatially varying reliability
+of the dehazing output.
+
+**G2 — Restoration quality is not aligned with detection objectives.** Many
+dehazing methods are optimized purely for image-quality metrics (PSNR, SSIM,
+BRISQUE, NIQE) [2015, 2020, 2023], which do not correlate with downstream
+detection performance. A dehazed image that scores well on perceptual metrics
+may still be suboptimal for object localization, particularly for small and
+distant objects that are most vulnerable under fog.
+
+**G3 — Single-density training limits fog-severity robustness.** Prior
+foggy-driving benchmarks train on a single scattering coefficient $\beta$
+[2015, 2018], causing detectors to memorize a specific atmospheric appearance.
+This fails to generalize across the continuum of fog densities encountered in
+real driving, where visibility varies continuously.
+
+**G4 — The synthetic-to-real domain gap is unaddressed.** Methods trained
+exclusively on synthetic fog [2015, 2016, 2020] degrade on real foggy images
+due to the distribution shift between simulated and physical fog. Prior work
+either ignores this gap or relies on large, manually curated real datasets
+that are expensive to obtain.
+
+**G5 — Depth information is underutilized.** The atmospheric scattering model
+explicitly couples fog severity to scene depth ($t(\mathbf{x}) =
+e^{-\beta d(\mathbf{x})}$), yet existing joint dehazing-detection methods
+either ignore depth entirely or output it as a parallel prediction that never
+feeds back into the detection decision [DEHRFormer, DCL].
+
+**G6 — Numerical instability in joint training.** Jointly optimizing
+restoration and detection is notoriously unstable: unbounded feature
+magnitudes from the restoration branch can destabilize the detection head's
+box regression, and mixed-precision training can introduce overflow-induced
+NaNs. Prior work does not systematically address these practical obstacles.
+
+### A.2 Contributions of WRDNet
+
+**C1 — Joint, feature-level fusion via the Feature Selection Gate (FSG).**
+Rather than committing to a single restored image, WRDNet keeps the detection
+backbone on the *original* foggy image and injects dehazed cues *at the
+feature level* through a learned, per-pixel gating mechanism. This directly
+addresses **G1** and **G2**: the network learns *where* dehazing is beneficial
+rather than trusting it uniformly, and the gate is trained end-to-end with the
+detection objective rather than a perceptual metric.
+
+**C2 — Multi-density fog training.** We exploit the fact that Foggy Cityscapes
+provides each scene at three scattering coefficients
+$\beta \in \{0.005, 0.01, 0.02\}$, tripling the effective training data and
+enforcing fog-severity invariance. This addresses **G3** by compelling the
+network to learn representations robust across the atmospheric continuum.
+
+**C3 — Multi-level frequency-aware domain adaptation.** We bridge the
+synthetic-to-real gap (**G4**) through three complementary mechanisms: Fourier
+Domain Adaptation (FDA) at the input level, DCT-based feature alignment at the
+representation level, and a novel FSG-consistency loss at the output level.
+This multi-level strategy aligns the two domains without requiring real
+annotations.
+
+**C4 — Depth-guided feature fusion (DG-FSG).** We introduce the first
+mechanism in which estimated monocular depth *actively modulates* how restored
+and original features are combined, exploiting the physical coupling between
+fog and depth (**G5**). The gate learns to trust dehazed features more for
+distant objects and original features more for nearby objects, producing a
+physically interpretable fusion policy.
+
+**C5 — A numerically stable joint-training recipe.** We address **G6** through
+a combination of bfloat16 mixed precision (which avoids the overflow-induced
+NaNs of float16), a magnitude clamp on the fused features, and a two-phase
+training schedule that first establishes a robust detection baseline before
+enabling the fusion and domain-adaptation modules.
+
+## B. Problem Formulation
 
 We address the task of object detection under foggy driving conditions. Let
 $\mathcal{I} \in \mathbb{R}^{H \times W \times 3}$ denote a foggy RGB image
@@ -36,7 +122,7 @@ distant objects obscured. A detector that commits to a single restored
 representation therefore operates at a fixed point on this accuracy–fidelity
 trade-off.
 
-## B. Architectural Overview
+## C. Architectural Overview
 
 We propose the **Weather-Resilient Detection Unified Network (WRDNet)**, a
 multi-branch architecture that jointly performs restoration, detection, and
@@ -63,7 +149,7 @@ representation is injected *at the feature level* through the FSG, allowing the
 network to selectively exploit dehazed cues where they are beneficial without
 committing to a single restored image.
 
-## C. Feature Selection Gate (FSG)
+## D. Feature Selection Gate (FSG)
 
 The central contribution of WRDNet is the Feature Selection Gate, which learns
 a spatially varying interpolation between restoration and detection features.
@@ -119,7 +205,7 @@ which yields $\sigma(-2.0) \approx 0.12$, biasing the gate toward the original
 features early in training and preventing the detection loss from spiking on
 unstable restored features.
 
-## D. Depth-Guided FSG (DG-FSG)
+## E. Depth-Guided FSG (DG-FSG)
 
 For the depth-aware variant, we augment the gating network with a monocular
 depth estimate. A lightweight depth decoder $\mathcal{D}$ progressively
@@ -138,7 +224,7 @@ benefit more from dehazing, so the gate can learn a depth-conditional fusion
 policy. The depth decoder is supervised with a scale-invariant loss
 [Eigen et al., 2014] on synthetic data.
 
-## E. Multi-Density Fog Training
+## F. Multi-Density Fog Training
 
 A central limitation of prior foggy-driving benchmarks is that they train on a
 single fog density $\beta$, causing the detector to memorize a specific
@@ -160,7 +246,7 @@ images rendered at density $\beta$. This multi-density strategy is a
 principled, physically grounded form of data expansion that directly targets
 the task's core challenge.
 
-## F. Domain Adaptation
+## G. Domain Adaptation
 
 To bridge the gap between synthetic fog and real-world fog, we incorporate
 unsupervised domain adaptation using real foggy images from the ACDC dataset
@@ -192,7 +278,7 @@ where the domain weight $\lambda_{\text{dom}}$ is linearly ramped from $0$ to
 its target value over the first epochs to avoid destabilizing the detector
 early in training.
 
-## G. Training Procedure
+## H. Training Procedure
 
 WRDNet is trained in two stages. In **Phase 0**, the restoration branch is
 frozen and the detection branch is trained on the multi-density synthetic data
