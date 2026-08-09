@@ -133,7 +133,7 @@ inspired by the frequency-domain and multi-angle attention design of TCL-Net
 objects in fog.
 
 **Detection backbone.** The detection branch is built upon YOLOv11s
-[Ultralytics, 2024], a modern one-stage detector. We adopt its efficient
+[25], a modern one-stage detector. We adopt its efficient
 backbone and detection head, and we replace the default 80-class COCO head with
 an 8-class Cityscapes head to align the class semantics with the driving
 domain. The idea of enhancing a YOLO detector for adverse weather through
@@ -191,7 +191,7 @@ $f_\theta: \mathcal{I} \mapsto \mathcal{Y}$ that remains accurate across a
 continuum of atmospheric conditions.
 
 Fog degrades the observed radiance through the atmospheric scattering model
-[Koschmieder, 1924]:
+[22]:
 
 $$
 \mathbf{I}(\mathbf{x}) = \mathbf{J}(\mathbf{x}) \, t(\mathbf{x}) + \mathbf{A} \,
@@ -226,7 +226,7 @@ four principal components:
 1. **Restoration branch** — a lightweight DehazeFormer-T [15]
    transformer that estimates the clean image $\hat{\mathbf{J}}$ and exposes
    multi-scale encoder features.
-2. **Detection branch** — a YOLOv11s [Ultralytics, 2024] detector whose
+2. **Detection branch** — a YOLOv11s [25] detector whose
    backbone operates on the *original* foggy image to preserve spatial
    resolution and small-object cues.
 3. **Feature Selection Gate (FSG)** — a learned, per-pixel gating mechanism
@@ -280,8 +280,8 @@ information from coarser scales to refine the gating decision at finer scales.
 
 **Stability analysis.** A critical practical concern is the numerical
 stability of the fused features when propagated through the detection head.
-The YOLO detection head employs Distribution Focal Loss (DFL) [Li et al.,
-2022], which predicts a discrete distribution over box-edge offsets. If the
+The YOLO detection head employs Distribution Focal Loss (DFL) [23], which
+predicts a discrete distribution over box-edge offsets. If the
 fused features exhibit unbounded magnitude, the DFL logits can saturate,
 causing the predicted box edges to collapse to a degenerate configuration. To
 prevent this, we apply a magnitude clamp after normalization:
@@ -314,15 +314,15 @@ $$
 where $\mathcal{E}$ is a depth encoder. This formulation exploits the physical
 prior that fog severity increases with depth: distant regions (large $d$)
 benefit more from dehazing, so the gate can learn a depth-conditional fusion
-policy. The depth decoder is supervised with a scale-invariant loss
-[Eigen et al., 2014] on synthetic data.
+policy. The depth decoder is supervised with a scale-invariant loss [24] on
+synthetic data.
 
 ## F. Multi-Density Fog Training
 
 A central limitation of prior foggy-driving benchmarks is that they train on a
 single fog density $\beta$, causing the detector to memorize a specific
 atmospheric appearance. We instead exploit the fact that the Foggy Cityscapes
-dataset [Sakaridis et al., 2018] provides the same scene rendered at multiple
+dataset [12] provides the same scene rendered at multiple
 scattering coefficients $\beta \in \{0.005, 0.01, 0.02\}$. Training on all
 three densities simultaneously:
 
@@ -343,7 +343,7 @@ the task's core challenge.
 
 To bridge the gap between synthetic fog and real-world fog, we incorporate
 unsupervised domain adaptation using real foggy images from the ACDC dataset
-[Sakaridis et al., 2021]. The synthetic branch provides supervised detection
+[26]. The synthetic branch provides supervised detection
 supervision, while the real branch provides an unlabeled domain signal through
 three complementary losses:
 
@@ -477,3 +477,23 @@ edge/fog-enabled traffic surveillance and collision avoidance systems,"
 segmentation," in *Proceedings of the IEEE/CVF Conference on Computer Vision
 and Pattern Recognition (CVPR)*, 2020. [Online]. Available:
 https://arxiv.org/abs/2004.05498
+
+[22] H. Koschmieder, "Theorie der horizontalen Sichtweite," *Beiträge zur
+Physik der freien Atmosphäre*, vol. 12, pp. 33–53, 1924.
+
+[23] X. Li, W. Wang, L. Wu, S. Chen, X. Hu, J. Li, J. Tang, and J. Yang,
+"Generalized focal loss: Learning qualified and distributed bounding boxes for
+dense object detection," in *Advances in Neural Information Processing Systems
+(NeurIPS)*, 2020.
+
+[24] D. Eigen, C. Puhrsch, and R. Fergus, "Depth map prediction from a single
+image using a multi-scale deep network," in *Advances in Neural Information
+Processing Systems (NeurIPS)*, 2014.
+
+[25] G. Jocher and J. Qiu, "Ultralytics YOLOv11," 2024. [Online]. Available:
+https://github.com/ultralytics/ultralytics
+
+[26] C. Sakaridis, D. Dai, and L. Van Gool, "ACDC: The adverse conditions
+dataset with correspondences for semantic driving scene understanding," in
+*Proceedings of the IEEE/CVF International Conference on Computer Vision
+(ICCV)*, 2021.
