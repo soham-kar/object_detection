@@ -433,7 +433,7 @@ a disparity-derived depth map, and instance-level bounding-box labels for eight
 driving-relevant classes.
 
 **Real-world domain-adaptation data.** To bridge the synthetic-to-real gap, we
-use the ACDC dataset [26] as the unlabeled target domain during Phase 1. The
+use the ACDC dataset [26] as the unlabeled target domain during Phase 2. The
 ACDC `train` split provides real foggy images without labels, which drive the
 three domain-adaptation losses (FDA, DCT alignment, and FSG consistency). The
 ACDC `val` split, which has labels, is used to monitor mAP during training.
@@ -475,18 +475,144 @@ where the domain weight $\lambda_{\text{dom}}$ is linearly ramped from $0$ to
 its target value over the first epochs to avoid destabilizing the detector
 early in training.
 
-## Training Procedure
+## Two-Phase Training
 
-WRDNet is trained in two stages. In **Phase 0**, the restoration branch is
-frozen and the detection branch is trained on the multi-density synthetic data
-with the FSG bypassed, establishing a robust detection baseline. In **Phase 1**,
-all components are unfrozen, the FSG is enabled with the magnitude clamp, and
-domain adaptation is applied using real foggy images. We use the AdamW
-optimizer with a cosine learning-rate schedule and gradient clipping at unit
-norm. Mixed-precision training is performed in bfloat16, which provides the
-exponent range of float32 (preventing overflow in the gating convolutions)
-while retaining the throughput benefits of reduced precision on modern
-tensor-core hardware.
+### Rationale for Two-Phase Training
+
+WRDNet is trained in two sequential phases, each with a distinct objective and
+data configuration. This staged strategy is motivated by three considerations.
+
+First, the detection head is initialized from a randomly initialized 8-class
+Cityscapes head (replacing the pretrained 80-class COCO head), which must learn
+the driving-relevant class semantics from scratch. Training this head jointly
+with the restoration branch and the domain-adaptation modules from the outset
+would expose it to conflicting gradients from multiple objectives, destabilizing
+the box regression. A dedicated warmup phase isolates the detection objective,
+allowing the head to converge to a robust baseline before auxiliary tasks are
+introduced.
+
+Second, the Feature Selection Gate (FSG) fuses restoration and detection
+features whose magnitudes differ substantially. When the restoration branch is
+frozen and the detection head is not yet calibrated, the fused features can
+exhibit unbounded magnitude that saturates the Distribution Focal Loss (DFL)
+[23] in the detection head, causing the predicted box edges to collapse to a
+degenerate configuration. Deferring the FSG to a later phase, after the
+detection baseline is established, mitigates this instability.
+
+Third, unsupervised domain adaptation requires a well-initialized detector to
+provide a meaningful pseudo-supervision signal. Applying the domain-adaptation
+losses to an undertrained detector would align features that are not yet
+discriminative, yielding a poor adaptation. The two-phase schedule ensures that
+the detector is sufficiently trained before the domain-alignment objectives are
+activated.
+
+### Phase 1: Detection Warmup
+
+In the first phase, WRDNet is trained exclusively on the multi-density synthetic
+data from Foggy Cityscapes [12]. The restoration branch (DehazeFormer-T [15])
+is **frozen**, and the Feature Selection Gate is **bypassed**, so the detection
+branch operates directly on the original foggy image features. This isolates
+the detection objective and establishes a robust baseline.
+
+**Objective.** The training objective in Phase 1 is the detection loss only:
+
+$$
+\mathcal{L}_{\text{Phase 1}} = \mathcal{L}_{\text{det}},
+$$
+
+where $\mathcal{L}_{\text{det}}$ is the YOLO detection loss comprising box
+regression, classification, and Distribution Focal Loss components [23].
+
+**What the model learns.** During Phase 1, the detection branch learns to
+localize and classify the eight driving-relevant classes (person, rider, car,
+truck, bus, train, motorcycle, bicycle) across the three fog densities
+$\beta \in \{0.005, 0.01, 0.02\}$. Because the training data spans multiple
+scattering coefficients, the detector learns fog-severity-invariant
+representations rather than memorizing a single atmospheric appearance. The
+multi-density data, combined with RandomScale and ColorJitter augmentation,
+mitigates overfitting on the limited annotated scenes.
+
+**Configuration.** Table II summarizes the Phase 1 configuration.
+
+**Table II: Phase 1 (Detection Warmup) configuration.**
+
+| Hyperparameter | Value |
+|----------------|-------|
+| Training data | Foggy Cityscapes (train + val, 3 densities) |
+| Restoration branch | Frozen |
+| Feature Selection Gate | Bypassed |
+| Depth decoder | Disabled |
+| Domain adaptation | Disabled |
+| Epochs | 50 |
+| Batch size | 24 |
+| Learning rate | $1 \times 10^{-4}$ |
+| Optimizer | AdamW |
+| Scheduler | Cosine annealing |
+| Early stopping | Patience 10 on ACDC val mAP |
+
+### Phase 2: Joint Fine-Tuning with Domain Adaptation
+
+In the second phase, all components of WRDNet are **unfrozen**, the Feature
+Selection Gate is **enabled** (with the magnitude clamp), and unsupervised
+domain adaptation is applied using real foggy images from the ACDC dataset [26].
+The synthetic branch provides supervised detection supervision, while the real
+branch provides an unlabeled domain signal.
+
+**Objective.** The Phase 2 objective combines the detection, restoration, depth,
+and domain-adaptation losses:
+
+$$
+\mathcal{L}_{\text{Phase 2}} = \mathcal{L}_{\text{det}} + \lambda_r
+\mathcal{L}_{\text{rest}} + \lambda_d \mathcal{L}_{\text{depth}} +
+\lambda_{\text{dom}} \mathcal{L}_{\text{dom}} + \lambda_{\text{fsg}}
+\mathcal{L}_{\text{fsg}},
+$$
+
+where $\mathcal{L}_{\text{rest}}$ is the restoration loss, $\mathcal{L}_{\text{depth}}$
+is the depth loss, $\mathcal{L}_{\text{dom}}$ is the domain-alignment loss, and
+$\mathcal{L}_{\text{fsg}}$ is the FSG-consistency loss. The domain weight
+$\lambda_{\text{dom}}$ is linearly ramped from $0$ to its target value over the
+first epochs to avoid destabilizing the detector.
+
+**What the model learns.** During Phase 2, the model learns to:
+
+1. **Fuse restoration and detection features** through the FSG, which learns a
+   per-pixel weighting between dehazed and original features. The gate learns
+   to favor dehazed features in distant, fog-obscured regions and original
+   features in near-field regions.
+2. **Align synthetic and real domains** through the three domain-adaptation
+   losses (FDA, DCT alignment, FSG consistency), enabling the learned
+   representations to transfer to real-world fog.
+3. **Estimate monocular depth** through the depth decoder, which provides a
+   depth-conditional signal to the DG-FSG variant.
+
+**Configuration.** Table III summarizes the Phase 2 configuration.
+
+**Table III: Phase 2 (Joint Fine-Tuning with Domain Adaptation) configuration.**
+
+| Hyperparameter | Value |
+|----------------|-------|
+| Training data | Foggy Cityscapes (synthetic) + ACDC (real) |
+| Restoration branch | Unfrozen |
+| Feature Selection Gate | Enabled (magnitude clamp $\tau = 10$) |
+| Depth decoder | Enabled |
+| Domain adaptation | FDA + DCT alignment + FSG consistency |
+| Epochs | 120 |
+| Batch size | 6 (paired synth + real) |
+| Learning rate | $2 \times 10^{-4}$ |
+| Optimizer | AdamW |
+| Scheduler | Cosine annealing |
+| Early stopping | Patience 10 on ACDC val mAP |
+
+### Optimization Details
+
+Both phases use the AdamW optimizer with a cosine learning-rate schedule and
+gradient clipping at unit norm. Mixed-precision training is performed in
+bfloat16, which provides the exponent range of float32 (preventing overflow in
+the gating convolutions) while retaining the throughput benefits of reduced
+precision on modern tensor-core hardware. The learning rate in Phase 2 is set
+lower than in Phase 1 to avoid destabilizing the pretrained detection head when
+the domain-adaptation losses are introduced.
 
 ---
 
