@@ -8,47 +8,76 @@ synthesize these gaps and state the corresponding contributions of WRDNet.
 
 ### A.1 Identified Research Gaps
 
-**G1 — The sequential dehaze-then-detect paradigm is suboptimal.** Classical
-prior-based methods (Dark Channel Prior [He et al., 2011] and its variants
-[2015, 2016, 2018]) and early learning-based dehazers [2015, 2020] treat
-restoration as a standalone preprocessing step, feeding the dehazed image to a
-downstream detector. This decoupling ignores the fact that restoration errors
-propagate directly into detection: over-aggressive dehazing can hallucinate
-artifacts near the camera, while conservative restoration leaves distant
-objects obscured. The detector is forced to operate on a single, fixed
-restored representation that cannot adapt to the spatially varying reliability
-of the dehazing output.
+**G1 — The sequential dehaze-then-detect paradigm is suboptimal.**
+Classical prior-based methods, beginning with the Dark Channel Prior (DCP)
+[1], and their lightweight variants [2, 3, 4], treat restoration as a
+standalone preprocessing step that produces a single dehazed image for a
+downstream detector. This decoupling is fundamentally limited: the
+atmospheric scattering model couples restoration and detection through the
+transmission map, yet the two stages are optimized independently. As a
+consequence, restoration errors propagate directly into detection.
+Over-aggressive dehazing can hallucinate artifacts in near-field regions
+(where fog is thin and the prior is unreliable), while conservative
+restoration leaves distant objects obscured. The detector is forced to
+operate on a single, fixed restored representation that cannot adapt to the
+spatially varying reliability of the dehazing output. Recent reviews of
+defogging for object detection [5, 6] confirm that this sequential paradigm
+consistently underperforms joint approaches, motivating feature-level
+integration.
 
-**G2 — Restoration quality is not aligned with detection objectives.** Many
-dehazing methods are optimized purely for image-quality metrics (PSNR, SSIM,
-BRISQUE, NIQE) [2015, 2020, 2023], which do not correlate with downstream
-detection performance. A dehazed image that scores well on perceptual metrics
-may still be suboptimal for object localization, particularly for small and
-distant objects that are most vulnerable under fog.
+**G2 — Restoration quality is not aligned with detection objectives.**
+Dehazing methods are predominantly optimized for image-quality metrics such
+as PSNR, SSIM, BRISQUE, and NIQE [2, 7, 8, 9]. These perceptual metrics do
+not correlate with downstream detection performance: an image that scores
+well on structural similarity may still be suboptimal for object
+localization, particularly for small and distant objects that are most
+vulnerable under fog. The Cycle-Defog2Refog framework [7] and the Gamma-CNN
+enhancement method [8] both optimize reconstruction fidelity without any
+task-aware signal, while the histogram-equalization family [9, 10] applies
+content-agnostic contrast enhancement. This metric misalignment means that
+even a "perfectly" dehazed image, by perceptual standards, does not
+guarantee improved detection, and can in fact degrade it by amplifying
+noise.
 
-**G3 — Single-density training limits fog-severity robustness.** Prior
-foggy-driving benchmarks train on a single scattering coefficient $\beta$
-[2015, 2018], causing detectors to memorize a specific atmospheric appearance.
-This fails to generalize across the continuum of fog densities encountered in
-real driving, where visibility varies continuously.
+**G3 — Single-density training limits fog-severity robustness.**
+Foggy-driving benchmarks are typically constructed at a single scattering
+coefficient $\beta$ [2, 4, 11], causing detectors to memorize a specific
+atmospheric appearance. In real driving, visibility varies continuously
+with fog density, and a detector trained at one operating point fails to
+generalize across the continuum. The multi-density nature of the Foggy
+Cityscapes dataset [12] — which renders each scene at
+$\beta \in \{0.005, 0.01, 0.02\}$ — is rarely exploited, leaving a
+significant source of physically grounded training signal unused.
 
-**G4 — The synthetic-to-real domain gap is unaddressed.** Methods trained
-exclusively on synthetic fog [2015, 2016, 2020] degrade on real foggy images
-due to the distribution shift between simulated and physical fog. Prior work
-either ignores this gap or relies on large, manually curated real datasets
-that are expensive to obtain.
+**G4 — The synthetic-to-real domain gap is unaddressed.**
+Methods trained exclusively on synthetic fog [2, 3, 7] degrade on real
+foggy images due to the distribution shift between simulated and physical
+fog. Prior work either ignores this gap entirely or relies on large,
+manually curated real datasets that are expensive to obtain. The
+Cycle-Defog2Refog framework [7] explicitly acknowledges that its
+physics-based refogging model fails under dense fog, and that its real
+dataset (MRFID) is too small (200 scenes) for robust generalization.
+Domain-adaptation methods for adverse weather [13, 14] address this gap but
+focus on a single alignment level, leaving multi-level alignment
+unexplored.
 
-**G5 — Depth information is underutilized.** The atmospheric scattering model
-explicitly couples fog severity to scene depth ($t(\mathbf{x}) =
-e^{-\beta d(\mathbf{x})}$), yet existing joint dehazing-detection methods
-either ignore depth entirely or output it as a parallel prediction that never
-feeds back into the detection decision [DEHRFormer, DCL].
+**G5 — Depth information is underutilized.**
+The atmospheric scattering model explicitly couples fog severity to scene
+depth ($t(\mathbf{x}) = e^{-\beta d(\mathbf{x})}$), yet existing joint
+dehazing-detection methods either ignore depth entirely or output it as a
+parallel prediction that never feeds back into the detection decision.
+Methods such as DEHRFormer and DCL estimate depth as a byproduct of
+dehazing but do not use it to modulate the fusion of restored and original
+features. This is a missed opportunity: depth is a physically meaningful
+prior that indicates *where* dehazing is most beneficial.
 
-**G6 — Numerical instability in joint training.** Jointly optimizing
-restoration and detection is notoriously unstable: unbounded feature
-magnitudes from the restoration branch can destabilize the detection head's
-box regression, and mixed-precision training can introduce overflow-induced
-NaNs. Prior work does not systematically address these practical obstacles.
+**G6 — Numerical instability in joint training.**
+Jointly optimizing restoration and detection is notoriously unstable.
+Unbounded feature magnitudes from the restoration branch can destabilize
+the detection head's box regression, and mixed-precision training can
+introduce overflow-induced NaNs. Prior work does not systematically address
+these practical obstacles, which are critical for reproducible, stable
+training of multi-task adverse-weather detectors.
 
 ### A.2 Contributions of WRDNet
 
@@ -61,7 +90,7 @@ rather than trusting it uniformly, and the gate is trained end-to-end with the
 detection objective rather than a perceptual metric.
 
 **C2 — Multi-density fog training.** We exploit the fact that Foggy Cityscapes
-provides each scene at three scattering coefficients
+[12] provides each scene at three scattering coefficients
 $\beta \in \{0.005, 0.01, 0.02\}$, tripling the effective training data and
 enforcing fog-severity invariance. This addresses **G3** by compelling the
 network to learn representations robust across the atmospheric continuum.
@@ -290,3 +319,74 @@ norm. Mixed-precision training is performed in bfloat16, which provides the
 exponent range of float32 (preventing overflow in the gating convolutions)
 while retaining the throughput benefits of reduced precision on modern
 tensor-core hardware.
+
+---
+
+## References
+
+[1] K. He, J. Sun, and X. Tang, "Single image haze removal using dark channel
+prior," *IEEE Transactions on Pattern Analysis and Machine Intelligence
+(TPAMI)*, vol. 33, no. 12, pp. 2341–2353, 2011.
+
+[2] "Lightweight computation single-image fog removal based on a new improved
+adaptive dark channel prior," *IEEE Transactions on Intelligent Transportation
+Systems (T-ITS)*, 2015.
+
+[3] "A fast method of fog and haze removal," *IEEE International Conference on
+Acoustics, Speech and Signal Processing (ICASSP)*, 2016.
+
+[4] "Fog removal method of slope monitoring image based on vision detection,"
+*Proceedings of the 37th Chinese Control Conference (CCC)*, 2018.
+
+[5] "A review of the impacts of defogging on deep learning-based object
+detectors in self-driving cars," 2024.
+
+[6] "Object detection in autonomous vehicles under adverse weather: A review
+of traditional and deep learning approaches," *Algorithms*, vol. 17, no. 3,
+2024.
+
+[7] "End-to-end single image fog removal using enhanced cycle consistent
+adversarial networks," *IEEE Transactions on Image Processing (TIP)*, 2020.
+
+[8] "Image enhancement for high-resolution visual contents," *IEEE
+International Conference on Electronics, Information, and Communication
+(ICEIC)*, 2023.
+
+[9] "Image enhancement using various histogram equalization techniques," *IEEE
+Global Conference for Advancement in Technology (GCAT)*, 2019.
+
+[10] "Image enhancement using the image sharpening, contrast enhancement, and
+standard median filter (noise removal) with pixel-based and human visual
+system-based measurements," *IEEE International Conference on Electrical
+Engineering and Computer Science (ICECOS)*, 2017.
+
+[11] "Design a hardware applying fog removal algorithm using median dark
+channel prior for autonomous driving car," *International Conference on
+Computational Science and Computational Intelligence (CSCI)*, 2023.
+
+[12] C. Sakaridis, D. Dai, and L. Van Gool, "Semantic foggy scene
+understanding with synthetic data," *International Journal of Computer Vision
+(IJCV)*, vol. 126, no. 9, pp. 973–991, 2018.
+
+[13] "Weather-aware object detection transformer for domain adaptation
+(FogAwareAttention)," 2024.
+
+[14] "CAST-YOLO: An improved YOLO based on a cross-attention strategy
+transformer for foggy weather adaptive detection," 2024.
+
+[15] Y. Song, Z. He, H. Qian, and X. Du, "Vision transformers for single image
+dehazing," *IEEE Transactions on Image Processing (TIP)*, vol. 32, pp.
+1927–1941, 2023.
+
+[16] "YOLOv8s-WAMNet: Enhancing robust vehicle detection under adverse weather
+via hybrid attention and multi-scale fusion," 2026.
+
+[17] "TCL-Net: A lightweight and efficient dehazing network with
+frequency-domain fusion and multi-angle attention," *ACCV*, 2024.
+
+[18] "SynFog: A synthetic fog dataset for robust object detection," 2024.
+
+[19] "From filters to VLMs: Benchmarking defogging methods through object
+detection and segmentation performance," 2025.
+
+[20] "Efficient and cost-effective vehicle detection in foggy weather," 2024.
