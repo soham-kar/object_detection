@@ -159,7 +159,7 @@ depth estimation while adaptively fusing features across the restoration and
 detection streams. The complete model is illustrated in Fig. 1 and comprises
 four principal components:
 
-1. **Restoration branch** — a lightweight DehazeFormer-T [Song et al., 2023]
+1. **Restoration branch** — a lightweight DehazeFormer-T [15]
    transformer that estimates the clean image $\hat{\mathbf{J}}$ and exposes
    multi-scale encoder features.
 2. **Detection branch** — a YOLOv11s [Ultralytics, 2024] detector whose
@@ -283,7 +283,7 @@ unsupervised domain adaptation using real foggy images from the ACDC dataset
 supervision, while the real branch provides an unlabeled domain signal through
 three complementary losses:
 
-1. **Frequency Domain Adaptation (FDA)** [Yang and Soatto, 2020] — swaps the
+1. **Frequency Domain Adaptation (FDA)** [21] — swaps the
    low-frequency components of synthetic and real images to align their
    spectral statistics.
 2. **Discrete Cosine Transform (DCT) alignment** — aligns the feature
@@ -376,7 +376,7 @@ transformer for foggy weather adaptive detection," 2024.
 
 [15] Y. Song, Z. He, H. Qian, and X. Du, "Vision transformers for single image
 dehazing," *IEEE Transactions on Image Processing (TIP)*, vol. 32, pp.
-1927–1941, 2023.
+1927–1941, 2023. [Online]. Available: https://arxiv.org/abs/2204.03883
 
 [16] "YOLOv8s-WAMNet: Enhancing robust vehicle detection under adverse weather
 via hybrid attention and multi-scale fusion," 2026.
@@ -390,3 +390,8 @@ frequency-domain fusion and multi-angle attention," *ACCV*, 2024.
 detection and segmentation performance," 2025.
 
 [20] "Efficient and cost-effective vehicle detection in foggy weather," 2024.
+
+[21] Y. Yang and S. Soatto, "FDA: Fourier domain adaptation for semantic
+segmentation," in *Proceedings of the IEEE/CVF Conference on Computer Vision
+and Pattern Recognition (CVPR)*, 2020. [Online]. Available:
+https://arxiv.org/abs/2004.05498
