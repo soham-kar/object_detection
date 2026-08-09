@@ -353,7 +353,7 @@ their citations.
 | ACDC | Real fog (unlabeled) | train | Domain adaptation (FDA, DCT, FSG-consistency) | [26] |
 | ACDC | Real fog (labeled) | val | Validation (mAP monitoring) | [26] |
 | Foggy Driving | Real fog (labeled) | test | Final evaluation (test mAP) | [12] |
-| Foggy Zurich | Real fog (unlabeled) | test | Cross-domain generalization | [12] |
+| Foggy Zurich | Real fog (unlabeled) | test | Cross-domain generalization | [27] |
 
 **Synthetic training data.** The primary supervised training signal comes from
 the Foggy Cityscapes dataset [12], which renders each Cityscapes scene at three
@@ -371,8 +371,8 @@ three domain-adaptation losses (FDA, DCT alignment, and FSG consistency). The
 ACDC `val` split, which has labels, is used to monitor mAP during training.
 
 **Real-world evaluation data.** For the final evaluation, we use the Foggy
-Driving dataset [27], a standard benchmark of real foggy driving scenes with
-bounding-box annotations, and the Foggy Zurich dataset [28] to assess
+Driving dataset [12], a standard benchmark of real foggy driving scenes with
+bounding-box annotations, and the Foggy Zurich dataset [27] to assess
 cross-domain generalization to an unseen real-world fog distribution.
 
 ## G. Domain Adaptation
@@ -471,7 +471,8 @@ Computational Science and Computational Intelligence (CSCI)*, 2023.
 
 [12] C. Sakaridis, D. Dai, and L. Van Gool, "Semantic foggy scene
 understanding with synthetic data," *International Journal of Computer Vision
-(IJCV)*, vol. 126, no. 9, pp. 973–991, 2018.
+(IJCV)*, vol. 126, no. 9, pp. 973–991, 2018. [Online]. Available:
+https://arxiv.org/abs/1708.07819
 
 [13] S. Gharatappeh, S. Y. Sekeh, and V. Dhiman, "Weather-aware object
 detection transformer for domain adaptation (FogAwareAttention)," arXiv
@@ -533,3 +534,7 @@ https://github.com/ultralytics/ultralytics
 dataset with correspondences for semantic driving scene understanding," in
 *Proceedings of the IEEE/CVF International Conference on Computer Vision
 (ICCV)*, 2021.
+
+[27] C. Sakaridis, D. Dai, S. Hecker, and L. Van Gool, "Model adaptation with
+synthetic and real data for semantic dense foggy scene understanding," in
+*European Conference on Computer Vision (ECCV)*, 2018, pp. 707–724.
