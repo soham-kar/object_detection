@@ -1,3 +1,39 @@
+# Abstract
+
+Object detection in autonomous driving degrades sharply under foggy
+conditions, where the atmospheric scattering model couples scene radiance,
+transmission, and depth in a way that confounds conventional detectors.
+Existing approaches either dehaze the image as a preprocessing step and feed
+the restored output to a detector, or train a detector directly on foggy
+images without exploiting restoration cues. Both paradigms are suboptimal:
+the former propagates restoration errors into detection, while the latter
+ignores the physically grounded information that dehazing provides. We
+propose the **Weather-Resilient Detection Unified Network (WRDNet)**, a
+multi-branch architecture that jointly performs restoration, detection, and
+depth estimation while adaptively fusing features across the restoration and
+detection streams. At the core of WRDNet is a **Feature Selection Gate (FSG)**
+that learns a per-pixel, multi-scale weighting between dehazed and original
+features, allowing the network to exploit restoration cues where they are
+beneficial without committing to a single restored image. We further introduce
+a **Depth-Guided FSG (DG-FSG)** that uses estimated monocular depth to
+actively modulate the fusion, exploiting the physical coupling between fog
+severity and scene depth. To address the synthetic-to-real domain gap, we
+propose a multi-level frequency-aware domain-adaptation strategy combining
+Fourier Domain Adaptation, DCT-based feature alignment, and a novel
+FSG-consistency loss. We also exploit the multi-density structure of the Foggy
+Cityscapes dataset to train across three scattering coefficients, tripling the
+effective data and enforcing fog-severity invariance. Extensive experiments on
+Foggy Cityscapes, ACDC, Foggy Driving, and Foggy Zurich demonstrate that
+WRDNet consistently outperforms sequential dehaze-then-detect baselines and
+prior joint approaches, while the learned gating maps provide physically
+interpretable evidence that the model adapts its fusion policy to scene depth
+and fog density.
+
+**Index Terms** — object detection, image dehazing, domain adaptation, feature
+fusion, adverse weather, autonomous driving.
+
+---
+
 # I. Introduction
 
 ## A. Research Gaps and Contributions
