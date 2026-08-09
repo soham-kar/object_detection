@@ -231,7 +231,7 @@ distant objects obscured. A detector that commits to a single restored
 representation therefore operates at a fixed point on this accuracy–fidelity
 trade-off.
 
-## What Makes WRDNet Weather-Resilient
+## Weather Resilience of WRDNet
 
 We define *weather resilience* as the capacity of a detector to sustain
 accurate performance across a continuum of atmospheric conditions, as opposed
