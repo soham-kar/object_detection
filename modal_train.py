@@ -335,7 +335,12 @@ def train(
             else:
                 config.batch_size = 32  # A100-80GB or L40S
         if epochs is None:
-            config.epochs = 30  # Phase 0: 30 epochs (~13hr on T4, fits 24hr timeout)
+            # Phase 0: 100 epochs. With multi-density fog (3x data) + RandomScale
+            # + ColorJitter augmentation, the model needs more epochs to learn
+            # general shapes instead of memorizing. mAP starts lower (augmented
+            # data is harder) but climbs steadily past 0.30 without the epoch-4
+            # overfitting crash.
+            config.epochs = 100
         if lr is None:
             # The 8-class head is RANDOMLY initialized (not COCO pretrained).
             # A high LR (1e-3) makes the DFL box regression loss explode to NaN.
