@@ -286,37 +286,40 @@ Classes (subset for autonomous driving):
 """
 ```
 
-#### Step 2: Create mixed dataloader
+#### Step 2: Create paired dataloader (for domain adaptation)
 
 ```python
 # src/data/dataset.py
 
-class MixedFogDataset(Dataset):
+class PairedDADataset(Dataset):
     """
-    Mixed dataset for joint training with domain adaptation.
+    Wraps a synthetic dataset and a real dataset for domain adaptation.
     
-    Returns batches with:
-      - 50% synthetic fog images (Foggy Cityscapes) WITH labels + clear GT
-      - 50% real fog images (ACDC/DAWN) WITHOUT labels
+    Each __getitem__ returns a dict with both 'synth' and 'real' sub-dicts.
+    When datasets have different lengths, the shorter one is cycled.
+    This is the ACTUAL implementation (not a 50/50 MixedFogDataset).
     """
     
-    def __init__(self, synthetic_root, real_roots, split='train'):
-        self.synthetic = FoggyCityscapesDataset(synthetic_root, split)
-        self.real = ConcatDataset([
-            ACDCDataset(real_roots['acdc'], split),
-            DAWNDataset(real_roots['dawn'], split)
-        ])
-        self.synthetic_len = len(self.synthetic)
-        self.real_len = len(self.real)
+    def __init__(self, synth_dataset: Dataset, real_dataset: Dataset):
+        self.synth_dataset = synth_dataset
+        self.real_dataset = real_dataset
+        self._len = max(len(synth_dataset), len(real_dataset))
+    
+    def __len__(self):
+        return self._len
     
     def __getitem__(self, idx):
-        if idx < self.synthetic_len:
-            # Synthetic: returns (foggy_image, clear_gt, bbox_labels)
-            return self.synthetic[idx]
-        else:
-            # Real: returns (foggy_image, None, None)
-            return self.real[idx - self.synthetic_len]
+        synth_idx = idx % len(self.synth_dataset)
+        real_idx = idx % len(self.real_dataset)
+        synth_sample = self.synth_dataset[synth_idx]
+        real_sample = self.real_dataset[real_idx]
+        return {'synth': synth_sample, 'real': real_sample}
 ```
+
+> **NOTE:** The synthetic dataset uses `FoggyCityscapesDataset` with:
+> - `fog_density=['0.005', '0.01', '0.02']` (multi-density, 3x data)
+> - `train_splits=['train', 'val']` (merged; test has no labels)
+> The real dataset is `ACDCDataset` (real fog, unlabeled for DA).
 
 #### Step 3: FDA Transform (Training Augmentation)
 
@@ -401,10 +404,10 @@ Source: Song et al., "Vision Transformers for Single Image Dehazing"
 Repo:   https://github.com/IDKiro/DehazeFormer
 
 Modifications for WRDNet:
-  1. Input resolution: 320×320 (downsampled from 640×640)
-  2. Output: restored image at 320×320 → bilinear upsample to 640×640
-  3. The upsampled 640×640 restored IMAGE is fed to YOLOv11s
-     (NOT just upsampled features — full-resolution restored image)
+  1. Input resolution: 480×480 (downsampled from 640×640)
+  2. Output: restored image at 480×480 → bilinear upsample to 640×640
+  3. The upsampled 640×640 restored IMAGE is used for feature fusion via FSG
+     (NOTE: YOLO backbone consumes the ORIGINAL foggy image, not the restored)
   4. Extract intermediate encoder features for FSG
   5. Add MAA modules to encoder stages 1-2
   6. Expose Stage 2 features for DCT alignment
@@ -421,7 +424,7 @@ class DehazeFormerWrapper(nn.Module):
     def __init__(self, variant='T', pretrained=True):
         # Load DehazeFormer-T from official repo
         # Add MAA to stages 1-2
-        # Modify for 320×320 input
+        # Modify for 480×480 input
         pass
     
     def forward(self, x):
@@ -573,8 +576,12 @@ Parameters: ~0.20M total (across 3 scales, including CDMSA)
 
 class FeatureSelectionGate(nn.Module):
     def __init__(self, channels_list):
-        # channels_list: [256, 512, 1024] for P3, P4, P5
+        # channels_list: [256, 256, 512] for P3, P4, P5 (verified from YOLOv11s)
         # One FSG per scale
+        # Output BatchNorm per scale to normalize fused features
+        # Magnitude clamp (±10) to prevent DFL collapse in the detection head
+        self.output_bns = nn.ModuleList([nn.BatchNorm2d(C) for C in channels_list])
+        self.fsg_clamp = 10.0
         pass
     
     def forward(self, restored_features, original_features):
@@ -586,6 +593,10 @@ class FeatureSelectionGate(nn.Module):
             fused_features: {P3, P4, P5}
             alpha_maps: {P3, P4, P5} for visualization
         """
+        # For each scale:
+        #   alpha = sigmoid(gate([F_rest, F_orig]))
+        #   fused = alpha * F_rest + (1-alpha) * F_orig
+        #   fused = clamp(BN(fused), -10, 10)   # magnitude clamp
         pass
 ```
 
@@ -822,7 +833,7 @@ which directly encodes depth d(x). The bottleneck already contains this
 information — the depth decoder just makes it explicit.
 
 ARCHITECTURE: Progressive upsampling (DPT/MiDaS style), 4 stages.
-  Bottleneck [B, 256, 10, 10]
+  Bottleneck [B, 96, 10, 10]
     → ConvTranspose → [B, 128, 20, 20]
     → ConvTranspose → [B, 64,  40, 40]
     → ConvTranspose → [B, 32,  80, 80]
@@ -848,7 +859,7 @@ Reference: DPT (Ranftl et al., ICCV 2021) — https://github.com/isl-org/DPT
 """
 
 class DepthDecoder(nn.Module):
-    def __init__(self, bottleneck_channels=256):
+    def __init__(self, bottleneck_channels=96):
         super().__init__()
         
         # Stage 1: 10×10 → 20×20
@@ -900,7 +911,7 @@ class DepthDecoder(nn.Module):
     def forward(self, bottleneck):
         """
         Args:
-            bottleneck: [B, 256, 10, 10] from DehazeFormer Stage 4
+            bottleneck: [B, 96, 10, 10] from DehazeFormer bottleneck
         Returns:
             depth_160: [B, 1, 160, 160] normalized depth map
             depth_640: [B, 1, 640, 640] upsampled to full resolution
@@ -993,7 +1004,7 @@ class DepthGuidedFSG(nn.Module):
     def __init__(self, channels_list, depth_channels=16):
         """
         Args:
-            channels_list: [256, 512, 1024] for P3, P4, P5
+            channels_list: [256, 256, 512] for P3, P4, P5
             depth_channels: C_d = 16
         """
         super().__init__()
@@ -1003,6 +1014,10 @@ class DepthGuidedFSG(nn.Module):
         self.gates = nn.ModuleList([
             self._make_gate(C, depth_channels) for C in channels_list
         ])
+        
+        # Output BatchNorm + magnitude clamp (same as FSG)
+        self.output_bns = nn.ModuleList([nn.BatchNorm2d(C) for C in channels_list])
+        self.fsg_clamp = 10.0
     
     def _make_gate(self, channels, depth_channels):
         """Create a single DG-FSG gate for one scale."""
@@ -1132,20 +1147,22 @@ model:
   dehazeformer_variant: 'T'       # DehazeFormer-T (0.69M params)
   yolo_variant: 's'               # YOLOv11s
   pretrained: true                 # Use pretrained weights
-  input_size_dehaze: 320           # DehazeFormer input resolution
+  num_classes: 8                   # Cityscapes classes (0=person,1=rider,2=car,3=truck,4=bus,5=train,6=motorcycle,7=bicycle)
+  replace_head: true               # Replace 80-class COCO head with 8-class head
+  input_size_dehaze: 480           # DehazeFormer input resolution (480, not 320)
   input_size_detect: 640           # YOLO input resolution
-  fsg_channels: [256, 512, 1024]  # P3, P4, P5 channels
+  fsg_channels: [256, 256, 512]   # P3, P4, P5 channels (verified from YOLOv11s)
 
 training:
-  # Phase 1: Warmup (no DA)
-  warmup_epochs: 30
-  warmup_batch_size: 16
-  warmup_lr: 1e-3
+  # Phase 0: Warmup (no DA, FSG bypassed)
+  warmup_epochs: 50
+  warmup_batch_size: 24            # A100-40GB
+  warmup_lr: 1e-4
   
-  # Phase 2: Domain Adaptation
-  da_epochs: 90
-  da_batch_size: 8                 # 4 synthetic + 4 real
-  da_lr: 5e-4
+  # Phase 1: Domain Adaptation
+  da_epochs: 120
+  da_batch_size: 6                 # Paired synth+real (2x memory)
+  da_lr: 2e-4                      # Lowered from 5e-4 to prevent confidence collapse
   
   # FDA schedule
   fda_start_epoch: 30
@@ -1155,11 +1172,11 @@ training:
     - [90, 0.04]
     - [120, [0.01, 0.06]]  # Random range
   
-  # Loss weights
-  lambda_rest: 0.5
-  lambda_depth: 0.1      # SILog depth loss (auxiliary task, small weight)
+  # Loss weights (reduced auxiliary weights so detection is prioritized)
+  lambda_rest: 0.1
+  lambda_depth: 0.05     # SmoothL1 depth loss (auxiliary task, small weight)
   lambda_entropy: 0.01    # Entropy minimization on real fog (FDA paper)
-  lambda_domain: 0.1
+  lambda_domain: 0.02
   lambda_fsg: 0.01
   
   # Optimizer
@@ -1168,13 +1185,14 @@ training:
   scheduler: 'cosine'
   
   # Data
-  synthetic_data: 'data/foggy_cityscapes'
+  synthetic_data: 'data/cityscapes'
+  fog_density: ['0.005', '0.01', '0.02']   # Multi-density fog (3x data)
+  train_splits: ['train', 'val']           # Merge train+val (test has no labels)
   real_data:
     - 'data/acdc/rgb_anon/fog'
-    - 'data/dawn/Images/fog'
   
   # Logging
-  log_interval: 100
+  log_interval: 5
   save_interval: 5
   checkpoint_dir: 'experiments/checkpoints'
   log_dir: 'experiments/logs'
@@ -1206,93 +1224,78 @@ class WRDNetLoss(nn.Module):
     NOTE: L_entropy is applied ONLY to real fog images (target domain),
     following the FDA paper (Yang & Soatto, CVPR 2020).
     
-    NOTE: L_depth uses SILog (Scale-Invariant Log) loss — the standard for
-    monocular depth. SILog penalizes relative depth errors while being
-    invariant to global scale shifts. Critical for foggy images where
-    absolute scale is unreliable.
-    Reference: Eigen et al., NeurIPS 2014
+    NOTE: L_depth uses SmoothL1 loss (not SILog). SILog was found to be
+    numerically unstable (log(0) → NaN) with the depth decoder. SmoothL1 is
+    robust to outliers and has no log instability.
     """
     
-    def __init__(self, config):
+    def __init__(self, config, yolo_model=None):
         super().__init__()
-        self.lambda_rest = config.lambda_rest
-        self.lambda_depth = config.lambda_depth
-        self.lambda_entropy = config.lambda_entropy
-        self.lambda_domain = config.lambda_domain
-        self.lambda_fsg = config.lambda_fsg
+        self.lambda_rest = getattr(config, 'lambda_rest', 0.1)
+        self.lambda_depth = getattr(config, 'lambda_depth', 0.05)
+        self.lambda_entropy = getattr(config, 'lambda_entropy', 0.01)
+        self.lambda_domain = getattr(config, 'lambda_domain', 0.02)
+        self.lambda_fsg = getattr(config, 'lambda_fsg', 0.01)
+        self.domain_warmup_epochs = getattr(config, 'domain_warmup_epochs', 10)
         
-        # Detection loss (YOLOv11s built-in)
         # Restoration loss
         self.restoration_loss = nn.MSELoss()
-        # Perceptual loss (optional)
-        self.perceptual_loss = None  # VGG-based
+        
+        # Detection loss: v8DetectionLoss from ultralytics.
+        # The YOLO head returns a dict {boxes, scores, feats} which is passed
+        # DIRECTLY to v8DetectionLoss (not concatenated into a tensor).
+        # The head dict format is what v8DetectionLoss expects.
+        self.yolo_loss = v8DetectionLoss(yolo_model)
     
     def silog_loss(self, pred_depth, gt_depth, variance_focus=0.5):
         """
         Scale-Invariant Log loss for monocular depth.
         
-        SILog = √( (1/N)·Σ(log(d_pred) - log(d_gt))² 
-                 - (λ/N²)·(Σ(log(d_pred) - log(d_gt)))² )
-        
-        Reference: Eigen et al., "Depth Map Prediction from a Single Image
-                   using a Multi-Scale Deep Network", NeurIPS 2014
+        NOTE: The ACTUAL implementation uses SmoothL1 (F.smooth_l1_loss) for
+        depth instead of SILog, because SILog was found to be numerically
+        unstable (log(0) → NaN) with the depth decoder. SmoothL1 is more
+        robust to outliers and has no log instability.
         """
-        # Mask valid pixels (gt > 0)
-        mask = (gt_depth > 0).float()
-        n_valid = mask.sum() + 1e-8
-        
-        # Log difference
-        g = torch.log(pred_depth * mask + 1e-8) - torch.log(gt_depth * mask + 1e-8)
-        g = g * mask
-        
-        # SILog
-        Dg = variance_focus * (g.pow(2).sum() / n_valid)
-        term2 = (1 - variance_focus) * (g.sum() / n_valid).pow(2)
-        return torch.sqrt(Dg - term2)
+        pass
     
     def forward(self, outputs, batch):
         """
         Args:
             outputs: dict with keys:
-                - detections_synth
-                - detections_real (for entropy loss)
-                - restored_image
-                - depth_pred (for SILog loss)
+                - detections_s (head dict {boxes, scores, feats})
+                - restored_s
+                - depth_s
+                - detections_r (for entropy loss)
                 - domain_loss
-                - alpha_synth, alpha_real
+                - fsg_cons_loss
             batch: dict with keys:
-                - synth_foggy, synth_clear, synth_labels, synth_depth_gt
-                - real_foggy
+                - bboxes (list of [N,5] tensors)
+                - clear_gt
+                - depth_gt
         """
         losses = {}
         
-        # Detection loss (synthetic only)
-        losses['det'] = outputs['det_loss']
+        # Detection loss (synthetic only) — pass head dict directly
+        losses['det'] = self.yolo_loss(outputs['detections_s'], yolo_batch)[0]
         
         # Restoration loss (synthetic only)
-        losses['rest'] = self.restoration_loss(
-            outputs['restored_image'], 
-            batch['synth_clear']
-        )
+        losses['rest'] = self.restoration_loss(outputs['restored_s'], batch['clear_gt'])
         
-        # Depth loss (synthetic only — SILog)
-        if outputs.get('depth_pred') is not None and batch.get('synth_depth_gt') is not None:
-            losses['depth'] = self.silog_loss(
-                outputs['depth_pred'], 
-                batch['synth_depth_gt']
-            )
-        else:
+        # Depth loss (synthetic only — SmoothL1, with NaN guard)
+        if torch.isnan(outputs['depth_s']).any():
             losses['depth'] = torch.tensor(0.0)
+        else:
+            losses['depth'] = F.smooth_l1_loss(outputs['depth_s'], batch['depth_gt'])
         
         # Entropy loss on real fog detections (FDA paper, CVPR 2020)
-        if outputs.get('detections_real') is not None:
-            probs = torch.softmax(outputs['detections_real'], dim=-1)
+        if outputs.get('detections_r') is not None:
+            probs = torch.softmax(outputs['detections_r'], dim=-1)
             entropy = -(probs * torch.log(probs + 1e-8)).sum(-1).mean()
             losses['entropy'] = (entropy**2 + 0.001**2)**0.75  # Charbonnier
         else:
             losses['entropy'] = torch.tensor(0.0)
         
-        # Domain alignment loss
+        # Domain alignment loss (with warmup ramp)
         if outputs.get('domain_loss') is not None:
             losses['domain'] = outputs['domain_loss']
         
@@ -1300,12 +1303,12 @@ class WRDNetLoss(nn.Module):
         if outputs.get('fsg_cons_loss') is not None:
             losses['fsg_cons'] = outputs['fsg_cons_loss']
         
-        # Total
+        # Total (domain weight ramps up over warmup epochs)
         total = losses['det']
         total += self.lambda_rest * losses['rest']
         total += self.lambda_depth * losses['depth']
         total += self.lambda_entropy * losses['entropy']
-        total += self.lambda_domain * losses.get('domain', 0)
+        total += self._effective_lambda_domain() * losses.get('domain', 0)
         total += self.lambda_fsg * losses.get('fsg_cons', 0)
         losses['total'] = total
         
@@ -1332,38 +1335,47 @@ class WRDNetTrainer:
             
             # === FORWARD PASS ===
             # Synthetic path
-            # DehazeFormer: 320×320 input → 640×640 restored IMAGE
+            # DehazeFormer: 480×480 input → 640×640 restored IMAGE
             restored_s_640 = self.model.dehazeformer(
-                F.interpolate(synth_batch['image'], size=320)
+                F.interpolate(synth_batch['image'], size=480)
             )  # [B, 3, 640, 640] — upsampled inside wrapper
             
-            # YOLO gets the full-resolution restored image
+            # CRITICAL: YOLO backbone gets the ORIGINAL foggy image (640×640),
+            # NOT the restored image. The restored image is only used for
+            # feature fusion via FSG. This preserves small-object cues.
             orig_features_s = self.model.yolo.get_backbone_features(
-                restored_s_640  # ← Restored IMAGE at 640×640, not foggy
+                synth_batch['image']  # ← ORIGINAL foggy image at 640×640
             )
-            # DehazeFormer encoder features for FSG (from 320×320, upsampled)
+            # DehazeFormer encoder features for FSG (from 480×480, upsampled)
             rest_features_s = self.model.dehazeformer.get_encoder_features(
-                F.interpolate(synth_batch['image'], size=320)
+                F.interpolate(synth_batch['image'], size=480)
             )
             rest_features_s = self._upsample_features(rest_features_s)
             
-            fused_s, alpha_s = self.model.fsg(rest_features_s, orig_features_s)
+            # FSG (bypassed in Phase 0; enabled with ±10 clamp in Phase 1)
+            if self.use_fsg:
+                fused_s, alpha_s = self.model.fsg(rest_features_s, orig_features_s)
+            else:
+                fused_s, alpha_s = orig_features_s, None
             detections_s = self.model.yolo.forward_neck_head(fused_s)
             
             # Real path (no detection loss)
             with torch.no_grad() if not self.use_fsg_consistency else nullcontext():
                 restored_r_640 = self.model.dehazeformer(
-                    F.interpolate(real_batch['image'], size=320)
+                    F.interpolate(real_batch['image'], size=480)
                 )
                 orig_features_r = self.model.yolo.get_backbone_features(
-                    restored_r_640  # ← Restored IMAGE at 640×640
+                    real_batch['image']  # ← ORIGINAL real foggy image
                 )
                 rest_features_r = self.model.dehazeformer.get_encoder_features(
-                    F.interpolate(real_batch['image'], size=320)
+                    F.interpolate(real_batch['image'], size=480)
                 )
                 rest_features_r = self._upsample_features(rest_features_r)
                 
-                fused_r, alpha_r = self.model.fsg(rest_features_r, orig_features_r)
+                if self.use_fsg:
+                    fused_r, alpha_r = self.model.fsg(rest_features_r, orig_features_r)
+                else:
+                    fused_r, alpha_r = orig_features_r, None
                 detections_r = self.model.yolo.forward_neck_head(fused_r)
             
             # === LOSSES ===
@@ -1611,7 +1623,7 @@ E13: E7 + DG-FSG            XX.X      XX.X         XX.X     XX.X      XX.X      
    Do NOT attempt all DA components at once.
 
 WEEK 1-2: PHASE 0 — Foundation & Memory Test
-  Day 1:     ⚠️ MEMORY TEST: Run DehazeFormer-T at 320×320 on cloud GPU.
+  Day 1:     ⚠️ MEMORY TEST: Run DehazeFormer-T at 480×480 on cloud GPU.
              If OOM → solve before anything else.
   Day 1-3:   Environment setup, install dependencies
   Day 4-7:   Download datasets, verify data pipeline
@@ -1725,8 +1737,8 @@ WEEK 15-18: PHASE 5 — Writing
 
 | Pitfall | Solution |
 |---------|----------|
-| DehazeFormer OOM at 640×640 | Use 320×320 input, upsample restored IMAGE to 640×640 |
-| DehazeFormer OOM at 320×320 | Reduce batch size, use gradient accumulation, or switch to DehazeFormer-XS |
+| DehazeFormer OOM at 640×640 | Use 480×480 input, upsample restored IMAGE to 640×640 |
+| DehazeFormer OOM at 480×480 | Reduce batch size, use gradient accumulation, or switch to DehazeFormer-XS |
 | FDA produces artifacts | Start with small β (0.01), increase gradually per schedule |
 | DCT alignment causes NaN loss | Reduce λ_domain, check gradient reversal; try MMD mode first |
 | FSG α maps are uniform (0.5) | Check if restoration loss is too strong; reduce λ_rest |
@@ -1761,18 +1773,21 @@ WEEK 15-18: PHASE 5 — Writing
 
 | Decision | Rationale |
 |----------|-----------|
-| DehazeFormer at 320×320, upsample to 640×640 | Avoids OOM; defogging is low-frequency, minimal quality loss |
-| YOLO receives restored IMAGE, not foggy image | Full-resolution restored input → better small object detection |
+| DehazeFormer at 480×480, upsample to 640×640 | Balances restoration quality vs compute; 480 is the sweet spot |
+| YOLO receives ORIGINAL foggy image, not restored | Preserves small-object cues; restored image only used for FSG fusion |
 | Entropy loss on real fog only | Follows FDA paper; synthetic images already have detection labels |
 | Charbonnier penalty for entropy | More stable than raw entropy; η=0.75 per FDA paper |
 | DCT alignment: MMD mode first | Simpler, no GRL instability; upgrade to adversarial only if needed |
 | FSG consistency: soft weighting | Avoids zero-gradient when no exact density matches exist |
 | TTA: optional, evaluation only | Unstable for detection; not claimed as core contribution |
 | Early stopping on ACDC val mAP | Prevents overfitting to synthetic domain during DA phase |
+| BF16 precision | FP16 overflows FSG gate; BF16 has FP32 exponent range, no GradScaler |
+| 8-class Cityscapes head | COCO class semantics mismatch; 8-class aligns with labels |
+| FSG magnitude clamp (±10) | Prevents DFL collapse from CDMSA feature spikes |
 
 ### 11.3 Pre-Implementation Checklist (Do BEFORE Writing Code)
 
-- [ ] ⚠️ **MEMORY TEST**: Run DehazeFormer-T at 320×320 on target cloud GPU
+- [ ] ⚠️ **MEMORY TEST**: Run DehazeFormer-T at 480×480 on target cloud GPU
 - [ ] Verify DehazeFormer-T pretrained weights load correctly
 - [ ] Verify YOLOv11s pretrained weights load correctly
 - [ ] Verify Foggy Cityscapes dataset is complete (images + foggy + labels)
@@ -1781,6 +1796,49 @@ WEEK 15-18: PHASE 5 — Writing
 - [ ] Set up Google Drive / Modal volume for checkpoint storage
 - [ ] Test Colab/Modal GPU availability and session limits
 - [ ] Verify Foggy Cityscapes disparity/ folder exists (for depth GT)
+
+---
+
+## 11.4 Current Implementation Status (as of 2026-08-09)
+
+> **IMPORTANT:** This section documents the ACTUAL working implementation,
+> which diverges from the original design in several critical ways. These
+> changes were made through extensive debugging and are REQUIRED for stable
+> training.
+
+### Critical Fixes Applied
+
+| # | Issue | Fix | Why |
+|---|-------|-----|-----|
+| 1 | **FP16 overflow in FSG gate** | Use **BF16** precision | FP16 max (65504) overflows the FSG gate conv (sum ~295k) → NaN. BF16 has FP32's exponent range, no overflow, no GradScaler needed |
+| 2 | **Class semantics mismatch** | **8-class Cityscapes head** (`replace_head=True`) | COCO class 1=bicycle but Cityscapes class 1=rider. 80-class head had to unlearn COCO → mAP stuck at 0.05 |
+| 3 | **FSG CDMSA magnitude explosion** | **±10 magnitude clamp** on fused features | CDMSA produced features mag 37-62 (vs YOLO ~8), shattering the DFL → x-coords collapse to left edge |
+| 4 | **FSG bypassed in Phase 0** | `use_fsg=False` in Phase 0 | FSG has nothing to fuse while DehazeFormer is frozen; bypass lets YOLO train on clean features |
+| 5 | **Confidence collapse in Phase 1** | **LR 5e-4 → 2e-4** | 5x LR spike from Phase 0's 1e-4 ripped weights, destroying detection thresholds (mAP 0.31→0.14) |
+| 6 | **Epoch-4 overfitting** | **Multi-density fog + augmentation** | Model memorized 2975 images; multi-density (3x) + RandomScale/ColorJitter force general shapes |
+| 7 | **Detection loss format** | Pass head dict `{boxes, scores, feats}` directly to `v8DetectionLoss` | Concatenating into a tensor gave constant huge loss |
+| 8 | **GradScaler crash** | Skip optimizer step on NaN batches | Replacing NaN loss with detached tensor broke GradScaler ("No inf checks recorded") |
+| 9 | **Depth NaN** | **SmoothL1** instead of SILog; disabled depth in Phase 0 | SILog's log(0) → NaN; SmoothL1 is robust |
+
+### Current Training Configuration
+
+| Setting | Phase 0 | Phase 1 |
+|---------|---------|---------|
+| Epochs | 50 | 120 |
+| Batch size | 24 | 6 (paired) |
+| LR | 1e-4 | 2e-4 |
+| FSG | Bypassed | Enabled (±10 clamp) |
+| Depth | Disabled | Enabled |
+| Data | Multi-density (8,925) | Multi-density + ACDC |
+| num_workers | 8 | 8 |
+
+### Current Best Results
+
+| Phase | mAP@50 | Notes |
+|-------|--------|-------|
+| Phase 0 (old pipeline) | 0.237 | Single density, no augmentation |
+| Phase 1 (old pipeline) | 0.257 | LR 2e-4, still overfit |
+| Phase 0 (new pipeline) | **0.308** (epoch 9, climbing) | Multi-density + augmentation |
 
 ---
 
@@ -1813,14 +1871,14 @@ WRDNet optionally integrates monocular depth estimation as a third task alongsid
               │                     │
               ▼                     ▼
         DehazeFormer-T         YOLOv11s
-        (320×320)              (640×640)
+        (480×480)              (640×640)
               │                     │
     ┌─────────┴─────────┐           │
     │  MAA (stages 1-2) │           │
     │  DCT Align (stg 2)│           │
     │                    │           │
     │  Bottleneck        │           │
-    │  [B,256,10,10]     │           │
+    │  [B,96,10,10]      │           │
     └────────┬───────────┘           │
              │                       │
     ┌────────┴────────┐              │
@@ -1912,19 +1970,23 @@ TOTAL (inference)                 10.50M      24.5
 Change from core WRDNet:          +0.32M      +2.1 GMACs (+9%)
 ```
 
+> **NOTE:** The FSG channels are [256, 256, 512] (not [256, 512, 1024] as in the
+> original plan). The YOLOv11s backbone P3/P4/P5 channels were verified from
+> the actual model. The DehazeFormer bottleneck is 96 channels (not 256).
+
 ### 12.6 Updated Loss Function
 
 ```
 L_total = L_det(synthetic) 
         + λ_rest · L_rest(synthetic)
-        + λ_depth · L_depth(synthetic)        ★ SILog loss
+        + λ_depth · L_depth(synthetic)        ★ SmoothL1 loss
         + λ_entropy · L_entropy(real)
         + λ_domain · L_domain(both)
         + λ_fsg · L_fsg_cons(both)
 
-L_depth = SILog(pred_depth, gt_depth)  ★ Scale-Invariant Log loss
+L_depth = SmoothL1(pred_depth, gt_depth)  ★ SmoothL1 (not SILog — more stable)
 
-λ_depth = 0.1  (auxiliary task, small weight — don't let depth compete with detection)
+λ_depth = 0.05  (auxiliary task, small weight — don't let depth compete with detection)
 ```
 
 ### 12.7 Depth Ablation Experiments
@@ -2146,7 +2208,7 @@ def generate_alpha_depth_plot(model, dataloader, save_path, num_samples=500):
 | **RMSE** | $\sqrt{\frac{1}{N}\sum(d_{pred} - d_{gt})^2}$ | Absolute error in meters |
 | **AbsRel** | $\frac{1}{N}\sum\frac{|d_{pred} - d_{gt}|}{d_{gt}}$ | Relative error |
 | **δ<1.25** | % of pixels where $\max(\frac{d_{pred}}{d_{gt}}, \frac{d_{gt}}{d_{pred}}) < 1.25$ | Thresholded accuracy |
-| **SILog** | See §6.3 | Scale-invariant log error |
+| **SmoothL1** | See §6.3 | Robust L1 loss for depth |
 
 **Report depth metrics separately for near (0-20m), mid (20-50m), and far (50m+) objects.** Depth accuracy degrades with distance — this is expected and honest.
 
@@ -2155,7 +2217,7 @@ def generate_alpha_depth_plot(model, dataloader, save_path, num_samples=500):
 | Task | Effort |
 |------|:---:|
 | Depth decoder implementation | 1 day |
-| SILog loss implementation | 30 minutes |
+| SmoothL1 loss implementation | 30 minutes |
 | DG-FSG modification (FSG → DG-FSG) | 1 day |
 | Data loader: add disparity loading | 1 day |
 | Training E11 (depth as auxiliary) | 2-3 days |
@@ -2180,9 +2242,9 @@ def generate_alpha_depth_plot(model, dataloader, save_path, num_samples=500):
 
 | Pitfall | Solution |
 |---------|----------|
-| Depth decoder produces uniform output | Check SILog implementation; verify disparity→depth conversion |
+| Depth decoder produces uniform output | Check SmoothL1 implementation; verify disparity→depth conversion |
 | DG-FSG α maps don't correlate with depth | Warm up without depth guidance for 10 epochs first |
-| Depth loss dominates training | Keep λ_depth = 0.1 (small); depth is auxiliary |
+| Depth loss dominates training | Keep λ_depth = 0.05 (small); depth is auxiliary |
 | Depth accuracy poor beyond 50m | Expected — report per-range metrics honestly |
 | α vs. depth correlation is weak | Try object-wise (not pixel-wise) correlation; check fog density variation |
 | OOM with depth decoder | Depth decoder is only 0.3M params — should not cause OOM |

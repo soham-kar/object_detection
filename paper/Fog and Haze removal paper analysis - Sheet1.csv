@@ -1,0 +1,495 @@
+SL No.,Name of Paper,Year of Publication,Journal / Conference Name,Findings,,,,,
+,,,,Algorithms Used,Architecture Framework,Dataset,Accuracy Measure,Available Resources,Research Gap
+,"Lightweight Computation Single-Image Fog
+Removal Based on a New Improved
+Adaptive Dark Channel Prior",2015,IEEE Transactions on Intelligent Transportation Systems (IEEE T-ITS),"The proposed method is a lightweight, prior-based dehazing algorithm built upon the Dark Channel Prior (DCP) framework. The core novel algorithmic components include:
+
+    Improved Adaptive Dark Channel Prior (DCP): A modification of the classical DCP that eliminates the computationally expensive local patch-based minimum filtering. Instead, the dark channel is computed per-pixel as Idark(x)=min⁡c(Ic(x)).
+
+    Bright Channel Extraction: The complementary ""bright channel"" Ibright(x)=max⁡c(Ic(x))Ibright(x)=maxc​(Ic(x)) is used as an additional feature to analyze overexposure and improve defogging performance in sky/backlight scenes.
+
+    Adaptive Fog Factor (ωω): A novel adaptive mechanism that selects the fog factor ωω between 0.6 (for overexposed scenes) and 0.9 (otherwise) based on the percentage of bright channel pixels exceeding intensity 200. The thresholds Tp=0.43Tp​=0.43 and Tintensity=200Tintensity​=200 are empirically determined from 500 outdoor images.
+
+    Anisotropic Diffusion for Transmission Map Refinement: Replaces the traditional soft matting or guided filter with anisotropic diffusion (Perona-Malik) to smooth the transmission map while preserving edges. Uses a 3×33×3 diffusion coefficient kernel with central weight 0.25 and surrounding weights 0.125.
+
+    Percentile Histogram Stretching (Post-Processing): A lightweight contrast enhancement that linearly stretches pixel intensities between the 5th and 95th percentiles independently for each color channel to combat the low-contrast output typical of DCP methods.
+
+    YOLOv4 Integration (Task-Driven Evaluation): The defogged output is fed into a YOLOv4 object detector to quantify practical improvement in detection tasks.","The processing pipeline is a sequential, single-image defogging system:
+
+    Dark Channel Extraction: Compute Idark(x) and Ibright(x) per-pixel.
+
+    Adaptive Fog Factor Selection: Determine ω∈{0.6,0.9}ω∈{0.6,0.9} based on the bright channel histogram.
+
+    Air Light Map Estimation: A(x)=ω⋅Idark(x) (no sorting required).
+
+    Transmission Map Refinement: Apply anisotropic diffusion to the air light map to obtain the transmission map t(x)t(x).
+
+    Scene Recovery: Recover the fog-free image using the atmospheric scattering model: 
+
+    Post-Processing: Apply percentile histogram stretching to enhance contrast.
+
+The entire pipeline is implemented in MATLAB R2022A and designed for deployment on resource-constrained embedded platforms, including those equipped with a single Neural Processing Unit (NPU).
+
+IoT: The paper is explicitly targeted at intelligent vehicle systems and ADAS, which are IoT edge devices. The method supports real-time processing on resource-constrained embedded platforms (e.g., single NPU), making it suitable for deployment on IoT edge nodes in autonomous vehicles and surveillance systems.","The evaluation uses two standard benchmark datasets:
+
+    RESIDE (REalistic Single Image DEhazing): Specifically the SOTS (Synthetic Objective Testing Set) subset, which contains 1,000 synthetic hazy-clean image pairs (both indoor and outdoor environments). Also uses ITS (Indoor Training Set) and HSTS (Hybrid Subjective Testing Set) for qualitative comparison.
+
+    HAZERD Dataset: 15 sets of outdoor hazy images with five different haze levels per scene, synthesized using physically realistic scattering parameters.
+
+    Custom Analysis: 500 outdoor images were analyzed to determine the adaptive ωω thresholds.","The paper employs an extensive suite of both full-reference and no-reference image quality assessment metrics:
+
+Full-Reference Metrics (on SOTS and HAZERD):
+
+    PSNR (Peak Signal-to-Noise Ratio): Proposed method achieves 22.39 dB, competitive with DehazeNet (22.92 dB) and superior to traditional DCP (17.47 dB).
+
+    SSIM (Structural Similarity Index): Achieves 0.9097, close to FFA-Net (0.9513) and superior to DehazeNet (0.8880).
+
+    RMSE (Root Mean Square Error): Proposed method achieves 19.76, outperforming traditional DCP (35.87) and competitive with DehazeNet (19.19).
+
+No-Reference Metrics:
+
+    BRISQUE: 18.68 (lower is better), outperforming all compared methods including DehazeFormer (20.10).
+
+    NIQE: 3.04, competitive with learning-based methods.
+
+    ILNIQE, BIQI, TDME, EMEE, AME: Multiple complementary no-reference metrics demonstrating competitive performance.
+
+Task-Driven Metric (YOLOv4 Object Detection):
+
+    Detection Accuracy Improvement: Up to 18% improvement in detection confidence and 5–7% increase in detected object count after defogging.
+
+Time Complexity (Processing Speed):
+
+    At 1920×10801920×1080 resolution: 15.87 FPS, which is 42.89× faster than prior-based methods and 151.14× faster than learning-based methods (FFA-Net, DehazeNet).
+
+    At 854×480854×480 resolution: 111.11 FPS, achieving real-time performance (exceeding 100 FPS).","GitHub 
+
+Dataset: RESIDE and HAZERD are publicly available benchmark datasets.","The paper identifies several limitations and areas for future investigation:
+
+    Overexposure Handling: While the adaptive ωω mechanism improves performance in sky/backlight scenes, the method can still produce suboptimal results in extreme brightness conditions with simultaneous dark and bright regions (e.g., scenes with headlights, reflections, or sun glare). The failure rate is approximately 25.2% of cases where adaptive tuning provides benefit, suggesting room for improvement.
+
+    Contrast Limitation: Even with percentile histogram stretching, the DCP-based approach inherently darkens images and may not fully restore the dynamic range of the original fog-free scene compared to learning-based methods like DehazeFormer or FFA-Net.
+
+    Generalization to Diverse Weather Conditions: The method is tested primarily on fog/haze conditions. Extension to other adverse weather conditions (rain, snow, night-time haze) is not explored.
+
+    Integration with Real-Time Detection Pipelines: While YOLOv4 integration is demonstrated on static images, further validation is needed for the full real-time video pipeline on actual embedded hardware (e.g., NPU-equipped ADAS boards).
+
+    Adaptive Threshold Refinement: The adaptive ωω thresholds (Tp=0.43Tp​=0.43, Tintensity=200Tintensity​=200) were empirically derived from 500 images. More rigorous optimization or learning-based threshold selection could improve robustness.
+
+    No Learning-Based Adaptation: The method remains purely prior-based, which limits its ability to adapt to complex, unseen haze distributions that deep learning methods could potentially model.
+
+    Comparison with Lightweight Deep Learning Methods: While comparisons include FFA-Net and DehazeNet, more recent lightweight learning-based dehazing networks (e.g., MobileNet-based architectures) are not included in the benchmark.
+
+    Limited Real-World Validation: Although evaluated on benchmark datasets, the paper does not provide extensive real-world testing on actual autonomous driving platforms under dynamic foggy conditions.
+
+In summary, this paper presents a highly optimized, lightweight DCP-based fog removal algorithm tailored for real-time intelligent vehicle applications. Its primary contributions are the adaptive fog factor mechanism, the use of anisotropic diffusion for efficient transmission map refinement, and achieving competitive image quality at processing speeds 151× faster than learning-based methods. The method is fully reproducible with open-source MATLAB code, making it a practical solution for resource-constrained ADAS platforms. The main research gaps lie in extreme weather condition handling, further contrast restoration, and integration with end-to-end real-time detection pipelines on embedded NPU hardware."
+,"Challenges and Opportunities in Fog Computing
+Scheduling: A Literature Review",2025,IEEE Access (Digital Object Identifier: 10.1109/ACCESS.2024.3525261).,"This paper is a literature review and does not propose a new scheduling algorithm. Instead, it systematically classifies existing fog computing scheduling techniques into four categories:
+
+    Heuristic‑Based Scheduling – e.g., Hybrid Meta‑heuristic Optimization Algorithm (HMOA), Particle Swarm Optimization (PSO), Genetic Algorithm (GA), Ant Colony Optimization (ACO), Fruit Fly Optimization Algorithm (FOA), Marine Predator’s Algorithm (MHMPA).
+
+    Deadline‑Based Scheduling – e.g., Static Local Fog Cloud (LFC), GA‑PSO, Hybrid Monarch Butterfly with Ant Colony (HMA), DQN‑based, deadline‑aware Estimation of Distribution Algorithm (dEDA).
+
+    Security‑Based Scheduling – e.g., RT‑TADS, Security‑Driven Task Scheduling (SDTS), RT‑SANE, SecOFF‑FCIoT, Multi‑Objective Simulated Annealing (MOSA).
+
+    Load‑Balancing‑Based Scheduling – e.g., Power of Two Choices (Po2C), FiFSA/EFSA, Reinforcement Learning‑based Fog Scheduling (RLFS), Load Balanced Service Scheduling Approach (LBSSA).","The paper presents two key architectural views:
+
+    General Fog Computing Architecture: A three-tier model consisting of Cloud Layer (remote data center), Fog Layer (distributed fog nodes with task scheduler), and IoT Device Layer (sensors/embedded devices).
+
+    Task Scheduling Architecture inside the Fog Layer: Figure 5 details a framework comprising a Fog Manager, Task Analyzer, Task Scheduler, Algorithm Library, Resource Allocator, and a Computing Resource Pool. The Fog Manager selects the appropriate algorithm from the library to allocate tasks to fog nodes or the cloud. ","As a review, the paper does not use or release any new dataset. It describes the datasets and workloads employed in the surveyed studies, including:
+
+    CERIT‑SC System traces (scientific cloud workload)
+
+    Bitbrain dataset (healthcare, cognitive/emotional responses)
+
+    Alibaba Cluster Trace (large‑scale cloud computing workload)
+
+    LCG (Large Hadron Collider Computing Grid) dataset
+
+    Synthetic IoT, production line, and healthcare workloads generated via tools like iFogSim, MATLAB, CloudSim.","The paper does not evaluate accuracy in a traditional ML sense. It compiles performance metrics used in the reviewed fog scheduling literature:
+
+    Primary metrics: energy consumption, resource utilization, execution time, delay, response time, makespan, success ratio, load balance.
+
+    Additional metrics: reliability, security, cost, network bandwidth, scalability, fault tolerance, Quality of Service (QoS).",N/A,"The paper identifies several open issues and challenges that represent research gaps:
+
+    Resource Management & Allocation: Difficulty in balancing conflicting objectives (e.g., latency vs. energy) in dynamic, heterogeneous fog environments.
+
+    Computational Overhead: High complexity of scheduling algorithms strains resource‑constrained fog nodes.
+
+    Limited Real‑World Data Availability: Lack of large, diverse datasets for training and validation; reliance on simulations that may not capture real‑world dynamics.
+
+    Security & Privacy Concerns: Ensuring data confidentiality and integrity across decentralized, heterogeneous fog nodes; vulnerabilities in software‑based protection.
+
+    Scalability & Elasticity: Challenges in scaling fog systems seamlessly and adapting to fluctuating workloads without performance loss.
+   
+In summary, the paper provides a thorough taxonomy and comparative analysis of fog computing scheduling methods, highlighting that no single algorithm is optimal for all scenarios and pointing toward intelligent, secure, and scalable solutions as the key future pathway.
+"
+,"Enhancing IoT Applications’ Placement in the Fog
+with Proactive Infeasibility Detection and Repair",2025,2025 10th International Conference on Fog and Mobile Edge Computing (FMEC),"Infeasibility Detection: Supervised XGBoost regressor (with reg:logistic objective) for binary classification of placement problems as feasible or infeasible.
+
+Application Selection/Repair: A heuristic algorithm that filters out low-priority applications from the deployment request set when infeasibility is detected. It iteratively removes applications bound to the most critical sub-nets until the problem becomes feasible.","The study adopts a modular system framework for reactive placement decision-making.
+
+    Two-Step Reactive Process: The core of the framework lies in its ""Infeasibility Detection Application Selection"" loop. Before sending requests to the optimization module, an XGBoost-based detection module predicts feasibility. If an infeasible problem is detected, a heuristic-based application selection module trims the request set to prevent failures.
+
+    Feature Engineering Approach: To make the model infrastructure-agnostic, the framework computes statistical features (e.g., node-to-application ratio, capacity-to-demand ratio) from the most ""critical"" sub-nets across network layers (Gateways, Edge Servers), rather than relying on specific topology details.","Sources: A synthetically generated dataset specifically designed for this study, based on Data Stream Processing (DSP) applications.
+
+Scale: Approximately 20,000 placement problems across three infrastructure scales: Small (9k), Medium (6k), and Large (5k).
+
+Composition: A balanced mix of feasible and infeasible placement problems, generated by incrementally adding randomized applications to simulated fog infrastructures until the problem becomes unsolvable.
+
+Availability: The dataset is open-sourced and can be accessed via the dedicated GitHub repository.","Primary Metric: Prediction Accuracy, where the XGBoost model achieves up to 86% for infrastructure-specific scenarios and 80.6% for mixed-scale infrastructures.
+
+F1-Score Sub-metrics: Reported Recall (~86-91%) and Precision (~72-78%), indicating the model is more prone to false positives (classifying feasible problems as infeasible).
+
+Comparison Baseline: The model significantly outperforms a few-shot Large Language Model (LLM) baseline (Claude 3 Sonnet), which only achieves ~61-69% accuracy.
+
+Execution Speed: The lightweight model can process thousands of detection tasks within 1 second, ensuring system reactivity.",Code & Dataset :(GitHub),"    Finer-Grained Application Selection: The paper explicitly notes that future work could explore more sophisticated heuristics for selecting which applications to reject, balancing priority with other QoS metrics beyond just criticality.
+
+    Broader Constraint Handling: While the study focuses on resource-related constraints (CPU, RAM, bandwidth), extending the framework to handle other hard constraints, such as security and privacy requirements, remains open.
+
+    Integration with Other Combinatorial Solvers: The current framework is designed as a pre-check for optimization modules. Further research could investigate tighter coupling with specific solvers (e.g., customizing the repair heuristic based on the solver's strengths).
+
+    Handling Extreme Dynamicity: The paper acknowledges that the model was evaluated on static infrastructure snapshots and suggests validating the proactive detection approach in highly dynamic environments with frequent device churn or mobility.
+
+In conclusion, this work introduces a novel proactive approach to IoT application placement in fog computing. It combines a lightweight XGBoost model with a heuristic repair mechanism to filter out infeasible requests early, achieving 86% accuracy. The paper provides open-sourced datasets and code, with future directions focusing on more nuanced application selection strategies and adaptation to highly dynamic environments."
+,"Design a Hardware Applying Fog Removal
+Algorithm using Median Dark Channel Prior for
+Autonomous Driving Car",2023,2023 International Conference on Computational Science and Computational Intelligence (CSCI),"The core algorithm is based on the Dark Channel Prior (DCP), a well-known method for single-image fog removal. The key modifications and related processing steps are:
+
+    Median Dark Channel Prior: To address the ""blocking"" or halo artifacts common in standard DCP, the authors adopted a Median Dark Channel Prior. This involves selecting the median value from the RGB channels of a pixel's neighborhood instead of the minimum.
+
+    Median Filtering: A median filter is applied to the dark channel data in both vertical and horizontal directions to further reduce artifacts and complexity.
+
+    Sorting Algorithm: A specialized sorting algorithm is used to find the median values, which is designed to minimize the required hardware resources by comparing only three pieces of data at a time.","The hardware design is optimized for real-time performance on an FPGA:
+
+    Line Buffers: The architecture incorporates three line buffers to store and process pixel data from three consecutive image lines, which is essential for the median filtering operations.
+
+    Pipelining: Pipelining techniques are employed to enable real-time processing by overlapping the execution of multiple operations.
+
+    Resource Sharing: The number of comparators required for the sorting algorithm is minimized by reusing them, leading to a reduction in overall hardware resources.
+
+    Target Platform: The design is implemented in Verilog HDL and intended for deployment on an FPGA (Field-Programmable Gate Array) to achieve the necessary speed and efficiency for autonomous driving systems.","does not explicitly mention any specific, named dataset.","No quantitative accuracy metrics (e.g., PSNR, SSIM, or object detection improvement rates) are provided in the paper. The paper's focus is on the feasibility and efficiency of the hardware implementation rather than a rigorous quality comparison with other software-based fog removal methods.",N/A,"The paper's primary contribution is the hardware architecture, and it identifies several areas for further development:
+
+    Lack of Quantitative Validation: The main research gap is the absence of a quantitative comparison with existing methods. Future work would benefit from benchmarking the proposed architecture against software-based algorithms or other hardware accelerators using standard image quality metrics.
+
+    Performance on Resource-Constrained Platforms: The design is specifically optimized for FPGA. Future research could explore the algorithm's performance on more resource-constrained edge devices or ASICs (Application-Specific Integrated Circuits) for even lower power consumption.
+
+    Integration with Full Autonomous Driving Stack: The paper focuses on the fog removal module alone. Further research could investigate the overall system-level impact when this hardware accelerator is integrated into a complete autonomous driving pipeline, including how it improves the accuracy of subsequent tasks like object detection and lane keeping.
+
+    Extension to Other Adverse Conditions: While the paper mentions rain removal, the primary focus is on fog. Future work could adapt the hardware design to handle a wider variety of adverse weather conditions, such as snow or heavy rain, in a unified manner.
+
+    Real-World Testing: The design's performance is likely evaluated in simulation. Thorough testing with diverse, real-world driving scenarios and datasets captured in actual foggy conditions would be a crucial next step to validate its effectiveness."
+, Efficient Fog Removal Technique For Video Processing,2023,"2023 International Conference on Recent Advances in Electrical, Electronics & Digital Healthcare Technologies (REEDCON), IEEE.","The work relies entirely on the classical Dark Channel Prior (DCP) algorithm, originally proposed by He et al. (2009). The implementation for video follows these standard steps:
+
+    Frame Decomposition: The input foggy video is split into individual RGB image frames.
+
+    Dark Channel Computation: For each pixel, the minimum value in a local patch is computed across the three color channels.
+
+    Atmospheric Light Estimation: The brightest pixels in the dark channel are used to estimate the global airlight.
+
+    Transmission Map Calculation: The scene transmission is derived from the dark channel and atmospheric light.
+
+    Haze Removal: The haze-free frame is recovered pixel‑wise using the physical degradation model.
+
+    Video Reconstruction: The de‑fogged frames are reassembled into an output video.
+
+No novel algorithmic contribution is presented; the main adaptation is applying DCP frame‑by‑frame to video.","The system is a straightforward MATLAB‑based video processing pipeline:
+
+    Input: MP4 video file.
+
+    Processing Engine: MATLAB’s Image Processing Toolbox and Computer Vision Toolbox, utilizing VideoReader and VideoWriter functions.
+
+    Workflow:
+    Input Video → Extract Frames → Apply DCP to Each Frame → Store De‑fogged Frames → Reconstruct Output Video
+
+    There is no dedicated hardware architecture or deep neural network; the entire algorithm runs on a CPU in MATLAB.","Source: A single hazy video clip obtained from Google.
+
+Content: A jogger moving on a bridge over a water body, under foggy conditions.
+
+Purpose: To visually demonstrate the algorithm’s performance. No public benchmark dataset (e.g., RESIDE, O‑Haze) was used, and the clip is not shared.","The paper lists potential evaluation metrics but provides no quantitative results (no tables, no numeric values). The mentioned metrics are:
+
+    PSNR (Peak Signal‑to‑Noise Ratio) and SSIM (Structural Similarity Index) for video quality.
+
+    Visibility Percentage (VP) and Contrast Enhancement Factor (CEF) for visibility improvement.
+
+    The analysis is purely qualitative, relying on side‑by‑side frame comparisons and “fog intensity” plots that show relative changes without standardized units or comparison methods.",N/A,"The paper’s approach reveals several significant gaps that are either unaddressed or left as future work:
+
+    Lack of Temporal Consistency: Although the abstract claims to “combine temporal consistency and image de‑hazing algorithms,” the actual method processes frames independently. This leads to flickering and inconsistent visibility across adjacent frames, a known problem for per‑frame dehazing.
+
+    No Quantitative Validation: The absence of numeric accuracy metrics prevents objective comparison with state‑of‑the‑art methods. The paper’s claims of “superior real‑time performance and quality” are not supported by hard data.
+
+    Extremely Small and Non‑Standard Dataset: Relying on a single self‑acquired video clip undermines the generalizability of the results. There is no testing on standard benchmarks (e.g., FRIDA, REVIDE, or real foggy driving datasets).
+
+    Handling of Block Artifacts: Standard DCP is known to produce halo and blocking artifacts. The paper does not propose any refinement (soft matting, guided filter, median filtering) to mitigate these, which are critical for video applications.
+
+    Real‑Time Performance: The MATLAB implementation is not suitable for real‑time applications (e.g., autonomous driving) as claimed, and no execution time measurements are provided.
+
+    Absence of Comparative Analysis: No comparison is made with other single‑image or video‑based defogging techniques, leaving the contribution uncontextualized.
+
+In summary, the paper’s main value is a straightforward application of DCP to video within MATLAB, but it lacks scientific rigor in evaluation, novelty, and the handling of practical video challenges."
+,Image Enhancement for High-Resolution Visual Contents,2023,"IEEE International Conference on Electronics, Information, and Communication (ICEIC)","The paper proposes a novel method that combines:
+
+    Gamma Convolutional Neural Network (Gamma CNN): A deep network with 10 convolutional and ReLU blocks that estimates a ""gamma map"" to correct unknown log-transformation values.
+
+    Exponential Transformation: An exponential function is applied as an explicit transformation prior to the gamma map correction.
+
+    Residual Learning: The network output is added to the input via a residual connection to estimate the gamma map.
+
+    MAE Loss: The network is trained using a Mean Absolute Error (L1) loss function.
+
+    Compared Methods: The paper compares its results against Contextual and Variational Contrast Enhancement (CVC) and Learning Dual Transformation Networks for Image Contrast Enhancement (GLCE).","The proposed architecture is a custom CNN-based pipeline:
+
+    Gamma Map Estimation: The Gamma CNN, built on a VGG-style deep architecture with 10 convolutional layers and ReLU activations, takes a low-contrast image as input. It uses residual learning to predict a ""gamma map,"" which essentially learns the inverse of an unknown logarithmic degradation applied to the original image.
+
+    Correction & Enhancement: The estimated gamma map is added element-wise to the result of an explicit exponential transformation of the original input. This combination aims to correct the degradation while restoring contrast.
+
+    IoT-Related Content: While the paper does not explicitly define an ""IoT architecture,"" it mentions applications that are core to IoT and edge computing, such as vehicle image storage devices, autonomous driving, and CCTV systems. The method is proposed as a lightweight post-processing step for imaging systems, making it potentially suitable for resource-constrained IoT devices.",does not specify any particular dataset used for training or evaluation,"The performance is quantitatively compared to prior methods using the following metrics:
+
+    NIQE (Natural Image Quality Evaluator): A no-reference image quality metric. Lower NIQE scores indicate better perceptual quality. The proposed method achieved a NIQE of 2.9387, outperforming CVC (2.9929) and GLCE (3.1987).
+
+    PSNR and SSIM: The paper states it achieved ""high PSNR and SSIM figures"" but provides no specific numerical values for these metrics.",N/A,"The paper's contributions are limited, and several gaps are evident:
+
+    Limited Novelty: The method combines established techniques (residual learning, exponential transforms) without a fundamentally new theoretical insight.
+
+    Weak Experimental Validation: The evaluation is minimal. The paper compares against only two other methods and provides NIQE values but omits PSNR/SSIM values. There is no ablation study to validate the contribution of each proposed component (e.g., the Gamma CNN vs. the exponential transform).
+
+    No Dataset or Implementation Details: The lack of information on the training dataset, hyperparameters, and training procedure makes the results irreproducible. The absence of open-source code further limits verification and adoption.
+
+    Focus on ""High-Resolution"": The abstract mentions ""high-resolution visual contents,"" but the paper does not provide any analysis of computational cost or inference speed, which are critical for processing high-resolution images in real-time on edge devices.
+
+    Application Niche: The intended use case (correcting for unknown log transformations added for post-processing) is very specific. The paper does not demonstrate generalizability to standard low-light or contrast enhancement tasks.
+
+In summary, the paper presents a specialized but technically limited method. Its primary value lies in the concept of using a neural network to undo an unknown gamma-like transformation, but the lack of rigorous evaluation and reproducible resources limits its broader impact. If you are looking for more robust and well-documented image enhancement networks, you might find papers like ""Zero-DCE"" (Zero-Reference Deep Curve Estimation) or ""EnlightenGAN"" to be more comprehensive."
+,A Reviewof ImageEnhancementTechnology,2021,"2021 3rd International Conference on Machine Learning, Big Data and Business Intelligence (MLBDBI)","This is a review article and does not propose a new algorithm. Instead, it categorizes and describes several established classical image enhancement techniques:
+
+    Point Processing Operations: Grayscale transformation (negative, logarithmic, power-law/gamma), piecewise linear transformation (contrast stretching), and grey level slicing.
+
+    Histogram Processing: Histogram equalization and histogram matching.
+
+    Image Sharpening: Gradient operators (first-order differential) and Laplace operator sharpening (second-order differential).
+
+The paper explicitly notes that it does not cover deep learning-based methods, focusing solely on traditional spatial domain techniques, and states these perform poorly for color images","the paper does not introduce a new architecture. Its own structural framework is:
+
+    Introduction: Classifies image enhancement into point, spatial, and frequency domain methods.
+
+    Point Processing Operations: Details various grayscale manipulation techniques.
+
+    Histogram Processing: Explains equalization and matching.
+
+    Image Sharpening: Discusses gradient and Laplace-based methods.
+
+    Concluding Remarks: Summarizes challenges and future directions.",No novel dataset was used or proposed. ,"No quantitative accuracy metrics are introduced or evaluated. The review focuses on qualitative descriptions and mathematical foundations of the techniques, without any numerical results or comparisons.",N/A,"The paper itself outlines the following gaps and challenges in the image enhancement field:
+
+    Trade-off Between Noise and Edges: The fundamental difficulty of simultaneously reducing noise while enhancing edge information without introducing artifacts.
+
+    Subjectivity and Task Dependency: Enhancement is influenced by viewing conditions, imaging modes, and human visual characteristics, making universal methods challenging.
+
+    Adaptive and Real-Time Needs: The field is trending towards adaptive, real-time, color-aware, and human-visual-characteristic-aware methods.
+
+    Limitations of Classical Methods: The traditional techniques reviewed do not work well for color images, leaving room for advanced approaches.
+
+In summary, this is a concise foundational survey of classical image enhancement methods. Its main value lies in providing a structured overview of basic techniques rather than a novel solution, serving as a useful reference for beginners but lacking the empirical depth of a comprehensive modern review."
+,End-to-End Single Image Fog Removal Using Enhanced Cycle Consistent Adversarial Networks,2020,IEEE Transactions on Image Processing (IEEE TIP),"The proposed Cycle-Defog2Refog framework leverages and extends several techniques:
+
+    Cycle-Consistent Generative Adversarial Networks (CycleGAN): The foundational architecture, enabling training with unpaired foggy and fog-free images. The system has two transformation paths: fog→fogfree (Defog) and fogfree→fog (Refog).
+
+    Atmospheric Degradation Model: Explicitly embedded in the Refog-Net to synthesize realistic foggy images. A CNN estimates the transmission map TT, and a sky prior is used to robustly estimate atmospheric light AA.
+
+    Generative Adversarial Networks (GANs): Used with adversarial discriminators DfogDfog​ and DfogfreeDfogfree​ to distinguish real vs. fake images in both domains.
+
+    Encoder-Decoder Networks: Used in the Defog-Net (with 9 residual blocks) and Enhancer-Net (E-Net) architectures.
+
+    VGG-16 Perceptual Loss: Employed to preserve textural details and improve visual quality.","The system uses a two-stage mapping strategy with three key sub-networks:
+Component and their corresponding roles:
+Defog-Net (G): An encoder-decoder that maps foggy images to fog-free images. It uses 3 convolutional blocks for encoding, 9 residual blocks, and 3 deconvolutional blocks for decoding.
+Refog-Net (R): A CNN-based network that synthesizes fog from clear images. It explicitly uses the atmospheric scattering model I(x)=J(x)T(x)+A[1−T(x)]I(x)=J(x)T(x)+A[1−T(x)], where TT is estimated by a 5-layer CNN, and AA is estimated using a sky prior.
+Enhancer-Net (E-Net): An encoder-decoder with skip connections that enhances generated images in both paths (E-D-Net for defog, E-R-Net for refog). It improves texture details and overall visual quality.
+
+Training objective: The full loss combines adversarial loss, cycle-consistency loss, enhancer loss, and VGG perceptual loss. The model is implemented in TensorFlow and trained for ~35,400 iterations (~126 hours on a GTX 1080 Ti).","The paper introduces and uses MRFID (Multiple Real Fog Images Dataset):
+
+    Content: 200 natural outdoor scenes. For each scene: 1 clear image + 4 foggy images at different densities (slightly, moderately, highly, extremely foggy) — total of 1,000 images.
+
+    Source: Images sourced from the AMOS (Archive of Many Outdoor Scene) dataset, captured by static webcams worldwide, curated over one year per scene.
+
+    Additional benchmarks: RESIDE (synthetic), O-HAZE, and HazeRD datasets are used for evaluation.","The paper employs both full-reference and no-reference metrics:
+
+    Full-Reference: PSNR (Peak Signal-to-Noise Ratio) and SSIM (Structural Similarity Index) on synthetic images and O-HAZE.
+
+    No-Reference (Blind): FADE (Fog Aware Density Evaluator) to assess fog density; BAVE (Blind Assessment based on Visibility Enhancement) comprising visible edges rate , contrast restoration quality , and saturation.",Blog Post,"The paper explicitly acknowledges several gaps that remain open for future investigation:
+
+    Inability to Handle Heavy Fog: The current atmospheric degradation model fails to accurately describe scenes with dense fog, causing the method to break down under such extreme conditions.
+
+    Checkerboard Artifacts: Some results exhibit checkerboard artifacts from deconvolution layers, which the authors attribute to the ""uneven overlap"" pattern in the decoder. Potential remedies include: appropriate padding before convolution, careful iteration scheduling during training, and building a larger, more diverse foggy dataset for better generalization .
+
+    Dataset Generalization: MRFID is relatively small (200 scenes). The authors suggest that constructing a larger, more diverse real-world fog dataset would significantly enhance model robustness and artifact reduction.
+
+    Loss of Fine Texture Details: Some outputs, especially in the background, appear overly smooth or darkened, indicating room for improvement in the fidelity of texture and edge preservation.
+
+    Model Complexity: The two-stage mapping and multiple sub-networks increase training complexity and computational cost (~126 hours on GTX 1080 Ti), which could be a barrier for replication and deployment.
+
+In summary, this paper made a significant contribution to single image defogging by being the first to successfully apply an unpaired CycleGAN framework with a physics-based refogging model and a two-stage enhancement strategy. Its main limitations center around handling extreme fog densities, residual artifacts, and a lack of publicly available code and dataset for full reproducibility. If you would like, I can also help you contrast this approach with the traditional Dark Channel Prior methods or with the Quad-Path Cycle Consistent Adversarial Network (QPC-Net) mentioned in the search results, which directly builds upon this work."
+,"Image Enhancement using Various Histogram
+Equalization Techniques",2019,IEEE 2019 Global Conference for Advancement in Technology (GCAT),"The paper uses and reviews the following Histogram Equalization (HE) variants:
+
+    Traditional Histogram Equalization (HE): Used as the primary method for the practical experiment on an X-ray image.
+
+    Adaptive Histogram Equalization (AHE): Breaks the image into tiles and equalizes locally.
+
+    Dual Sub-Image Histogram Equalization (DSIHE): Splits the histogram into two equal-area sub-images and equalizes each independently.
+
+    Dynamic Histogram Equalization (DHE): Divides the histogram based on local minima and equalizes each sub-histogram independently.
+
+    Contrast Limited Adaptive Histogram Equalization (CLAHE): An AHE variant that clips the contrast to avoid noise amplification.
+
+    Minimum Mean Brightness Error Bi-Histogram Equalization (MMBEBHE): Finds the threshold that minimizes absolute mean brightness error before equalizing the two sub-histograms.","The paper presents a simple step‑by‑step pipeline for traditional HE (not a hardware/software architecture):
+
+    Input: An X‑ray image.
+
+    Pre‑processing: Convert to grayscale; compute image histogram.
+
+    Processing: Normalize histogram to a probability density function (PDF) → calculate cumulative density function (CDF) → map pixel intensities by multiplying the CDF by the maximum intensity (255).
+
+    Output: The enhanced image with a more uniform histogram.","No public dataset is used. The authors use a single X‑ray image of a human bone (self‑sourced, not named) to demonstrate the traditional HE method.","No standard quantitative image quality metrics (PSNR, SSIM, etc.) are reported. Instead, the paper relies on:
+
+    Statistical histogram parameters: Mean, median, and mode of the histogram before and after equalization (e.g., mean increased from 103.03 to 129.271, mode dropped from 29 to 0).
+
+    Visual assessment: The authors note that the equalized image is brighter, the contrast is enhanced, and bone fractures become more distinguishable.",N/A,"The paper highlights several limitations of the reviewed techniques and suggests future directions:
+
+    Static Nature of Traditional HE: The conventional method enhances contrast indiscriminately without considering the image’s content, which can produce unnatural or over‑enhanced results.
+
+    Context‑Aware Limitations: Even the modern techniques (AHE, CLAHE, DSIHE, DHE) can produce “undesirable results under certain unfavourable conditions”, making them unreliable for critical applications like medical imaging or consumer electronics where flawless output is expected.
+
+    Computational Cost of MMBEBHE: While MMBEBHE solves the unfavourable‑condition problem perfectly, it has a high computational cost because it must compute the absolute mean brightness error for every possible threshold. This makes it unsuitable for real‑time applications.
+
+    Future Direction: The implicit future work is to develop a histogram equalization method that is both adaptable (like AHE/CLAHE) and robust under all conditions (like MMBEBHE), but with low computational complexity to enable real‑time use in medical diagnosis, consumer electronics, and video processing.
+
+    Absence of Modern Methods: The paper does not explore deep learning‑based enhancement or hybrid approaches that combine physical models with learning, leaving a significant gap compared to current research trends.
+
+In summary, the paper serves as an introductory study and comparative review of histogram‑based enhancement techniques. Its contribution is limited to applying traditional HE to a medical X‑ray and discussing the merits and demerits of several HE variants, with the key takeaway that robust, real‑time, content‑adaptive equalization remains an open problem."
+,Fog_Removal_Method_of_Slope_Monitoring_Image_Based_on_Vision_Detection,2018,"Proceedings of the 37th Chinese Control Conference (CCC), published by IEEE (Electronic ISSN: 1934-1768)","This paper is primarily a comparative study of two families of defogging algorithms applied to slope monitoring images. It does not propose a novel algorithm and reports no sources.
+
+    Non-Physical Model — Image Enhancement Methods:
+
+        Histogram Global Equalization
+
+        Homomorphic Filtering
+
+        McCann Retinex Algorithm
+
+        Multi-Scale Retinex (MSR) Algorithm
+
+    Physical Model — Image Restoration Methods:
+
+        Dark Channel Prior (DCP) with Soft Matting (Kaiming He et al. 2009/2011)
+
+        DCP combined with Bilateral Filtering (replacing soft matting)","The paper describes a standard foggy image processing pipeline applied to slope monitoring, not a novel architecture:
+
+    Image Acquisition: A monocular camera captures the slope image under foggy conditions.
+
+    Fog Removal Processing: The defogging algorithm is applied.
+
+        Enhancement path: Direct contrast/color enhancement is applied without a physical model.
+
+        Restoration path: Atmospheric light AA and the transmission map t(x)t(x) are estimated using the DCP, refined with either soft matting or bilateral filtering, and then the scene radiance J(x)J(x) is recovered using the atmospheric scattering model.
+
+    Subsequent Analysis: The defogged image feeds into image segmentation, feature extraction, target positioning, and slope deformation displacement calculation.","Source: Self-collected, real foggy slope images (specific slope sites not specified).
+
+No Public Dataset","The paper evaluates defogging algorithms using the following image quality assessment metrics:
+
+    Contrast: Reflects the overall distribution of gray levels and the sharpness of black-white differentiation.
+
+    Average Gradient: Measures image clarity and the expression of fine details.
+
+    Information Entropy: Quantifies the average information content of the image.
+
+    Mean Value: Represents the average image brightness.
+
+    Standard Deviation: Indicates the dispersion degree of pixel gray values relative to the mean.
+
+    Processing Time: Measured in seconds.
+
+The main evaluation results are summarized in the paper's Tables 1 and 2, where Histogram Global Equalization achieved the best balance of image quality and processing speed.",N/A,"The paper's own experimental results and methodology reveal several gaps:
+
+    Algorithm-Specific Weaknesses: The paper documents that the DCP method suffers from long processing times (~130 seconds) and color distortion. Bilateral filtering with DCP produced severe overall color casts. MSR caused serious color distortion.
+
+    Trade-off Between Speed and Quality: The primary finding is the trade-off between processing speed and defogging quality. The fastest method (Histogram Equalization, ~20 seconds) provides only general contrast enhancement without modeling the physical process of fog formation.
+
+    No Adaptive Approach: The study is a static comparison of existing algorithms. It does not propose an adaptive framework that could dynamically select or tune algorithms based on real-time fog density assessments.
+
+    No Quantitative Fog Density Measurement: The paper lacks a pre-processing stage to quantify fog density (e.g., using FADE, the Fog Aware Density Evaluator). A follow-up 2022 paper by the same group addressed this by using FADE to decide whether defogging is necessary, indicating this was a gap in the 2018 CCC paper.
+
+    Limited Generalizability: Evaluated only on slope images from specific monitoring sites. Performance on diverse outdoor scenes or dense fog conditions was not validated.
+
+    Integration with Full Monitoring Pipeline: The paper ends at image quality evaluation, without quantifying the impact of defogging on the accuracy of subsequent displacement measurement, which is the ultimate goal of slope monitoring.
+
+In summary, this paper is a foundational, application-oriented comparison of classical defogging algorithms in the specific context of geological hazard monitoring. Its primary value lies in empirically determining that, for this application, speed is paramount and a simple Histogram Equalization method may be the most practical choice. Its main limitations are the lack of novelty, adaptive mechanisms, public dataset or code, and integration with the full monitoring workflow. If you are interested in more detail on the follow-up 2022 study that addressed some of these gaps (like fog density-aware DCP), please let me know."
+,"Image Enhancement Using the Image Sharpening, Contrast Enhancement, and Standard Median Filter (Noise Removal) with Pixel-Based and Human Visual System-Based Measurements",2017,IEEE International Conference on Electrical Engineering and Computer Science (ICECOS),"three classical image enhancement methods are described here :
+
+Image Sharpening: Edge enhancement by adding a high-pass filtered version of the original image to amplify high-frequency details around edges
+Contrast Enhancement (Histogram Equalization – HE): Global histogram equalization that redistributes pixel intensity values evenly across the grayscale range by applying a cumulative distribution-based transformation
+Noise Removal (Standard Median Filter – SMF): A median filtering technique that replaces each pixel with the median value of its neighboring pixels to suppress salt-and-pepper (impulse) noise","The paper does not propose a new computational architecture. It follows a standard image processing evaluation pipeline:
+
+    Input: Original images from the BSDS300 Berkeley dataset.
+
+    Processing: Three separate processing pipelines, each applying one method:
+
+        Image Sharpening Path: Adds a high-pass filtered version to the original image to enhance edges.
+
+        Contrast Enhancement Path: Computes the cumulative histogram and remaps pixel intensities globally.
+
+        Noise Removal Path: Applies a sliding median window (Standard Median Filter) to suppress impulse noise.
+
+    Evaluation: Each processed image is compared to the original using:
+
+        Pixel-Based Metrics: MSE and PSNR (difference between original and processed images).
+
+        Human Visual System-Based Metric: SSIM (structural similarity computed over 8×8 blocks).",,,,
+,A FAST METHOD OF FOG AND HAZE REMOVAL,2016,"IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP)","Dark Channel Prior (DCP): A key observation from previous work is that in most non-sky patches, at least one color channel has very low intensity in haze-free images. The paper uses this to estimate the initial transmission map.
+
+Multi-Level Transmission Maps: Instead of using a single block size (which is computationally expensive), the method computes the transmission map using three different block sizes (3x3, 5x5, 7x7) to balance edge preservation and artifact reduction.
+
+Cross Bilateral Filtering: This is used to merge the three radiance images (derived from the multi-level maps) with the 3x3 block result as the reference, effectively reducing noise without the heavy computation of soft matting.
+
+Contrast Enhancement: A pixel-wise contrast enhancement is applied after the main dehazing process to restore the image's dynamic range.
+
+Temporal Filtering: For video applications, this filter is used to remove temporal inconsistencies like rain or snow droplets and further reduce noise.","The processing pipeline can be described as follows:
+
+    Input: A single foggy image or a sequence of video frames.
+
+    Pre-processing: Compute the modified Dark Channel Prior and the global Atmospheric Light (""Airlight"") from the top 1% brightest pixels in the dark channel.
+
+    Core Processing:
+
+        Multi-Level Transmission Map Estimation: Calculate three different transmission maps using 3x3, 5x5, and 7x7 local patches. A saturation-based weight, f(S), is integrated to adjust the map and compensate for color loss in denser fog regions.
+
+        Radiance Map Generation: Derive the scene radiance for each of the three block sizes using the standard dehazing model.
+
+        Image Fusion: Merge the three radiance maps into a single, noise-reduced image using Cross Bilateral Filtering on the luminance (Y) component.
+
+    Post-processing: Apply a local contrast enhancement to the fused image to further improve visibility.
+
+    Video-Specific Block: For video streams, a temporal filter is introduced after the radiance map generation to exploit inter-frame consistency and suppress rain and snow.",evaluated on a set of 150 images. No dataset was publicly released with this work.,"Quantitative Metrics: The paper explicitly mentions using ""edge visible gradients"" and ""edge descriptors"" as measurable parameters based on a previous study. These metrics assess the enhancement of visible edges, which directly correlate with improved visibility.
+
+Qualitative Comparison: Visual comparisons of output images against the state-of-the-art method by He et al. were provided to showcase superior fog removal, color saturation, and artifact reduction.",N/A,"The paper identifies several limitations and proposes future work directions:
+
+    High-Resolution Real-Time Processing: The primary challenge identified is extending the method to achieve real-time performance on HD-quality (or better) preview frames, as the current optimization only works for VGA resolution on mobile devices.
+
+    Heterogeneous Computing: The authors planned to explore heterogeneous computing platforms (CPU and GPU) to further accelerate the algorithm and bridge the performance gap for higher resolutions.
+
+    Robustness and Generalization: As with many physics-based methods, the performance can degrade under conditions where the priors do not hold perfectly (e.g., scenes with large sky regions). The paper does not provide a quantitative analysis of potential failure cases.
+
+    Lack of Standardized Benchmarks: The evaluation relied on a private image set and a few specific metrics. A more comprehensive evaluation on emerging, large-scale public benchmarks (like HazeSpace2M) would be needed for a more objective comparison against modern learning-based methods.
+
+In summary, the paper presents a fast and practical engineering solution for enhancing visibility in adverse weather on resource-constrained mobile devices, achieving real-time performance for VGA video. Its main limitations are its evaluation scope, its reliance on proprietary data, and the lack of public resources, which makes direct comparison and reproduction difficult."
+,"Fog Removal Techniques from Images: A
+Comparative Review and Future Direction",2014,2014 International Conference on Signal Propagation and Computer Technology (ICSPCT 2014),"This is a comparative review, so it doesn't propose a new algorithm. The paper reviews a wide array of existing techniques:
+
+    Enhancement-Based (Non-Model): Histogram Equalization (HE) and its variants (AHE, CLAHE, BBHE, QBHE, DSIHE, MMBEHE, RMSHE, BPDHE, WMSH), Homomorphic Filtering, Retinex Theory (SSR, MSR, MSRCR).
+
+    Restoration-Based (Physical Model): Dark Channel Prior (DCP).","The paper describes a general framework for fog removal, not a computational architecture. The stages include: Image Acquisition → Estimation-Based Model (estimating airlight, transmission map, depth map) → Enhancement-Based Model (spatial or frequency domain processing) → Restoration Model → Compression-Based Model (for video).
+
+",The paper only mentions the use of generic foggy images to visually demonstrate the effects of the discussed algorithms,"The review references a quantitative method using the rate of new visible edges (e) and a quality of restoration indicator (r) proposed by Hautiere et al. However, the paper itself does not provide a comprehensive quantitative comparison of all reviewed techniques.",N/A,"Research Gap & Future Directions:
+
+    The paper's explicit suggestion for future work is to explore fog removal by transforming images into the frequency domain using techniques like Fast Fourier Transforms (FFT) or Discrete Fourier Transforms (DFT).
+
+    General Gaps of the Review: The paper primarily focuses on classical methods and does not cover modern deep learning approaches (like DehazeNet, AOD-Net, CycleGAN-based methods) that have emerged since 2014. It also lacks a standardized quantitative comparison across all techniques on a common benchmark dataset."
