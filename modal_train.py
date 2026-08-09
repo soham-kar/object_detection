@@ -380,8 +380,11 @@ def train(
     config.checkpoint_dir = ckpt_dir
     config.log_dir = log_dir
 
-    # Reduce workers on Modal (limited CPU on free tier)
-    config.num_workers = 2
+    # Increase dataloader workers to keep the A100 fed. With only 2 workers,
+    # the GPU sits idle waiting for the CPU to load + augment images
+    # (RandomScale, ColorJitter are CPU-bound). 8 workers keep the A100 busy,
+    # cutting epoch time significantly. A100 has ample CPU power.
+    config.num_workers = 8
 
     print(f"  GPU Memory: {gpu_mem_gb:.1f} GB")
     print(f"  Batch size: {config.batch_size}")
