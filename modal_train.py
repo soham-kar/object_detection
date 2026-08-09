@@ -335,12 +335,13 @@ def train(
             else:
                 config.batch_size = 32  # A100-80GB or L40S
         if epochs is None:
-            # Phase 0: 100 epochs. With multi-density fog (3x data) + RandomScale
-            # + ColorJitter augmentation, the model needs more epochs to learn
-            # general shapes instead of memorizing. mAP starts lower (augmented
-            # data is harder) but climbs steadily past 0.30 without the epoch-4
-            # overfitting crash.
-            config.epochs = 100
+            # Phase 0: 50 epochs (sweet spot). Starting from COCO pretrained
+            # weights, the backbone already knows object shapes — it just needs
+            # to adapt to fog + the 8-class head. With multi-density fog (3x
+            # data) + augmentation, mAP climbs steadily but plateaus around
+            # epoch 40-50. 100 epochs would only add ~1-2% mAP for 2x compute.
+            # Early stopping (patience=10) stops it at the peak automatically.
+            config.epochs = 50
         if lr is None:
             # The 8-class head is RANDOMLY initialized (not COCO pretrained).
             # A high LR (1e-3) makes the DFL box regression loss explode to NaN.
