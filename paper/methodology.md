@@ -115,6 +115,70 @@ NaNs of float16), a magnitude clamp on the fused features, and a two-phase
 training schedule that first establishes a robust detection baseline before
 enabling the fusion and domain-adaptation modules.
 
+### A.3 Design Provenance
+
+WRDNet is not assembled from isolated components but synthesizes ideas from a
+diverse body of prior work, adapting and extending them to the joint
+defogging-detection setting. We make this lineage explicit to acknowledge the
+intellectual foundations of each design choice and to clarify the boundary
+between adopted techniques and our novel contributions.
+
+**Restoration backbone.** The restoration branch is built upon the
+DehazeFormer-T transformer [15], which we adopt as a strong, lightweight
+dehazing encoder. Its window-based attention and revised normalization layers
+provide an effective feature representation for downstream fusion. We extend
+it with Multi-Angle Attention (MAA) modules on the early encoder stages,
+inspired by the frequency-domain and multi-angle attention design of TCL-Net
+[17], to enhance edge and texture cues that are critical for detecting small
+objects in fog.
+
+**Detection backbone.** The detection branch is built upon YOLOv11s
+[Ultralytics, 2024], a modern one-stage detector. We adopt its efficient
+backbone and detection head, and we replace the default 80-class COCO head with
+an 8-class Cityscapes head to align the class semantics with the driving
+domain. The idea of enhancing a YOLO detector for adverse weather through
+attention and multi-scale fusion is inspired by YOLOv8s-WAMNet [16] and
+CAST-YOLO [14], which demonstrate the value of weather-aware detection
+architectures.
+
+**Feature fusion.** The core Feature Selection Gate (FSG) is our novel
+contribution, but its design draws on two established ideas. First, the
+per-pixel gating mechanism is conceptually related to attention-based feature
+selection in dehazing networks such as FFA-Net and TCL-Net [17]. Second, the
+Cross-Dimensional Multi-Scale Attention (CDMSA) module that enriches the
+gating context is inspired by the channel, spatial, and cross-scale attention
+designs of YOLOv8s-WAMNet [16]. Our contribution is the *application* of
+learned gating to fuse restoration and detection features at multiple scales,
+which no prior work has done.
+
+**Domain adaptation.** The multi-level frequency-aware domain adaptation
+strategy synthesizes three ideas. The input-level Fourier Domain Adaptation
+(FDA) is directly adopted from Yang and Soatto [21]. The feature-level DCT
+alignment is inspired by the frequency-domain alignment of AdaDCP, which we
+simplify to a maximum-mean-discrepancy (MMD) formulation for stability. The
+output-level FSG-consistency loss is our novel contribution, extending the
+idea of consistency regularization to the gating maps.
+
+**Depth guidance.** The depth decoder follows the progressive upsampling
+design of DPT and MiDaS, and the Depth-Guided FSG (DG-FSG) is our novel
+contribution that extends the standard FSG with a depth-conditional gating
+input. This is motivated by the physical coupling between fog and depth in
+the atmospheric scattering model, which prior joint dehazing-detection methods
+such as DEHRFormer and DCL do not exploit for fusion.
+
+**Data strategy.** The multi-density fog training exploits the multi-scattering
+coefficient structure of the Foggy Cityscapes dataset [12], which prior work
+has largely underutilized. The RandomScale and ColorJitter augmentations are
+standard data-augmentation techniques adopted to mitigate overfitting on the
+limited annotated scenes.
+
+**Numerical stability.** The bfloat16 mixed-precision training and the
+magnitude clamp on fused features are engineering contributions that address
+the practical instability of joint training. These are not derived from a
+single prior work but are motivated by the well-known numerical challenges of
+mixed-precision training and the sensitivity of the YOLO detection head's
+Distribution Focal Loss to unbounded feature magnitudes.
+
 ## B. Problem Formulation
 
 We address the task of object detection under foggy driving conditions. Let
