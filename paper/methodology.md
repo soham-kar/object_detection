@@ -339,6 +339,42 @@ images rendered at density $\beta$. This multi-density strategy is a
 principled, physically grounded form of data expansion that directly targets
 the task's core challenge.
 
+## F.1 Datasets
+
+WRDNet is trained and evaluated on a combination of synthetic and real-world
+adverse-weather datasets. Table I summarizes the datasets, their roles, and
+their citations.
+
+**Table I: Datasets used in WRDNet.**
+
+| Dataset | Type | Split | Role | Citation |
+|---------|------|-------|------|----------|
+| Foggy Cityscapes | Synthetic fog (labeled) | train + val | Supervised detection + restoration + depth | [12] |
+| ACDC | Real fog (unlabeled) | train | Domain adaptation (FDA, DCT, FSG-consistency) | [26] |
+| ACDC | Real fog (labeled) | val | Validation (mAP monitoring) | [26] |
+| Foggy Driving | Real fog (labeled) | test | Final evaluation (test mAP) | [12] |
+| Foggy Zurich | Real fog (unlabeled) | test | Cross-domain generalization | [12] |
+
+**Synthetic training data.** The primary supervised training signal comes from
+the Foggy Cityscapes dataset [12], which renders each Cityscapes scene at three
+scattering coefficients $\beta \in \{0.005, 0.01, 0.02\}$. We use both the
+`train` and `val` splits for training (3,475 base scenes × 3 densities = 10,425
+images), since our final evaluation is on the disjoint ACDC and Foggy Driving
+datasets. Each synthetic sample provides a foggy image, its clear ground truth,
+a disparity-derived depth map, and instance-level bounding-box labels for eight
+driving-relevant classes.
+
+**Real-world domain-adaptation data.** To bridge the synthetic-to-real gap, we
+use the ACDC dataset [26] as the unlabeled target domain during Phase 1. The
+ACDC `train` split provides real foggy images without labels, which drive the
+three domain-adaptation losses (FDA, DCT alignment, and FSG consistency). The
+ACDC `val` split, which has labels, is used to monitor mAP during training.
+
+**Real-world evaluation data.** For the final evaluation, we use the Foggy
+Driving dataset [27], a standard benchmark of real foggy driving scenes with
+bounding-box annotations, and the Foggy Zurich dataset [28] to assess
+cross-domain generalization to an unseen real-world fog distribution.
+
 ## G. Domain Adaptation
 
 To bridge the gap between synthetic fog and real-world fog, we incorporate
