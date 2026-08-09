@@ -328,68 +328,86 @@ tensor-core hardware.
 prior," *IEEE Transactions on Pattern Analysis and Machine Intelligence
 (TPAMI)*, vol. 33, no. 12, pp. 2341–2353, 2011.
 
-[2] "Lightweight computation single-image fog removal based on a new improved
-adaptive dark channel prior," *IEEE Transactions on Intelligent Transportation
-Systems (T-ITS)*, 2015.
+[2] C.-C. Sun, N.-H.-H. Pham, A. A. Bryantono, and J.-W. Hsieh, "Lightweight
+computation single-image fog removal based on a new improved adaptive dark
+channel prior," *IEEE Transactions on Intelligent Transportation Systems
+(T-ITS)*, vol. 26, no. 11, 2025.
 
 [3] "A fast method of fog and haze removal," *IEEE International Conference on
 Acoustics, Speech and Signal Processing (ICASSP)*, 2016.
 
-[4] "Fog removal method of slope monitoring image based on vision detection,"
-*Proceedings of the 37th Chinese Control Conference (CCC)*, 2018.
+[4] X. Sang, Y. Yang, and X. Hou, "Fog removal method of slope monitoring
+image based on vision detection," in *Proceedings of the 37th Chinese Control
+Conference (CCC)*, 2018, pp. 1–6.
 
-[5] "A review of the impacts of defogging on deep learning-based object
-detectors in self-driving cars," 2024.
+[5] I. Ogunrinde, "A review of the impacts of defogging on deep learning-based
+object detectors in self-driving cars," in *IEEE SoutheastCon*, 2021.
 
-[6] "Object detection in autonomous vehicles under adverse weather: A review
-of traditional and deep learning approaches," *Algorithms*, vol. 17, no. 3,
-2024.
+[6] N. U. A. Tahir, Z. Zhang, M. Asim, J. Chen, and M. ELAffendi, "Object
+detection in autonomous vehicles under adverse weather: A review of
+traditional and deep learning approaches," *Algorithms*, vol. 17, no. 3, 2024.
 
-[7] "End-to-end single image fog removal using enhanced cycle consistent
-adversarial networks," *IEEE Transactions on Image Processing (TIP)*, 2020.
+[7] W. Liu, X. Hou, J. Duan, and G. Qiu, "End-to-end single image fog removal
+using enhanced cycle consistent adversarial networks," *IEEE Transactions on
+Image Processing (TIP)*, vol. 29, pp. 7819–7833, 2020.
 
-[8] "Image enhancement for high-resolution visual contents," *IEEE
-International Conference on Electronics, Information, and Communication
-(ICEIC)*, 2023.
+[8] H. Lim, J. Lee, H. Kim, H. Oh, and J. Paik, "Image enhancement for
+high-resolution visual contents," in *IEEE International Conference on
+Electronics, Information, and Communication (ICEIC)*, 2023.
 
-[9] "Image enhancement using various histogram equalization techniques," *IEEE
-Global Conference for Advancement in Technology (GCAT)*, 2019.
+[9] S. H. Gangolli and A. J. L. Fonseca, "Image enhancement using various
+histogram equalization techniques," in *IEEE Global Conference for Advancement
+in Technology (GCAT)*, 2019.
 
-[10] "Image enhancement using the image sharpening, contrast enhancement, and
-standard median filter (noise removal) with pixel-based and human visual
-system-based measurements," *IEEE International Conference on Electrical
-Engineering and Computer Science (ICECOS)*, 2017.
+[10] Erwin, A. Nevriyanto, and D. Purnamasari, "Image enhancement using the
+image sharpening, contrast enhancement, and standard median filter (noise
+removal) with pixel-based and human visual system-based measurements," in
+*IEEE International Conference on Electrical Engineering and Computer Science
+(ICECOS)*, 2017.
 
-[11] "Design a hardware applying fog removal algorithm using median dark
-channel prior for autonomous driving car," *International Conference on
+[11] C.-Y. Lee, "Design a hardware applying fog removal algorithm using median
+dark channel prior for autonomous driving car," in *International Conference on
 Computational Science and Computational Intelligence (CSCI)*, 2023.
 
 [12] C. Sakaridis, D. Dai, and L. Van Gool, "Semantic foggy scene
 understanding with synthetic data," *International Journal of Computer Vision
 (IJCV)*, vol. 126, no. 9, pp. 973–991, 2018.
 
-[13] "Weather-aware object detection transformer for domain adaptation
-(FogAwareAttention)," 2024.
+[13] S. Gharatappeh, S. Y. Sekeh, and V. Dhiman, "Weather-aware object
+detection transformer for domain adaptation (FogAwareAttention)," arXiv
+preprint arXiv:2504.10877, 2025.
 
-[14] "CAST-YOLO: An improved YOLO based on a cross-attention strategy
-transformer for foggy weather adaptive detection," 2024.
+[14] X. Liu, B. Zhang, and N. Liu, "CAST-YOLO: An improved YOLO based on a
+cross-attention strategy transformer for foggy weather adaptive detection,"
+*Applied Sciences*, 2024.
 
 [15] Y. Song, Z. He, H. Qian, and X. Du, "Vision transformers for single image
 dehazing," *IEEE Transactions on Image Processing (TIP)*, vol. 32, pp.
 1927–1941, 2023. [Online]. Available: https://arxiv.org/abs/2204.03883
 
-[16] "YOLOv8s-WAMNet: Enhancing robust vehicle detection under adverse weather
-via hybrid attention and multi-scale fusion," 2026.
+[16] M. Jaiswal, K. K. Nagwanshi, M. Heenaye-Mamode Khan, U. Verma, and A.
+Taylor, "YOLOv8s-WAMNet: Enhancing robust vehicle detection under adverse
+weather via hybrid attention and multi-scale fusion in real time," *Scientific
+Reports*, 2026.
 
-[17] "TCL-Net: A lightweight and efficient dehazing network with
-frequency-domain fusion and multi-angle attention," *ACCV*, 2024.
+[17] C. Tang and W. Lou, "TCL-Net: A lightweight and efficient dehazing
+network with frequency-domain fusion and multi-angle attention," in *ACCV*,
+2024.
 
-[18] "SynFog: A synthetic fog dataset for robust object detection," 2024.
+[18] Y. Xie, H. Wei, Z. Liu, X. Wang, and X. Ji, "SynFog: A photo-realistic
+synthetic fog dataset based on end-to-end imaging simulation for advancing
+real-world defogging in autonomous driving," arXiv preprint arXiv:2403.17094,
+2024.
 
-[19] "From filters to VLMs: Benchmarking defogging methods through object
-detection and segmentation performance," 2025.
+[19] A. Aryashad, P. Razmara, A. Mahjoub, S. Azizi, M. Salmani, and A.
+Firouzkouhi, "From filters to VLMs: Benchmarking defogging methods through
+object detection and segmentation performance," arXiv preprint
+arXiv:2510.03906, 2026.
 
-[20] "Efficient and cost-effective vehicle detection in foggy weather," 2024.
+[20] N. Raza, M. A. Habib, M. Ahmad, Q. Abbas, M. B. Aldajani, and M. A. Latif,
+"Efficient and cost-effective vehicle detection in foggy weather for
+edge/fog-enabled traffic surveillance and collision avoidance systems,"
+*Computers, Materials & Continua*, 2024.
 
 [21] Y. Yang and S. Soatto, "FDA: Fourier domain adaptation for semantic
 segmentation," in *Proceedings of the IEEE/CVF Conference on Computer Vision
