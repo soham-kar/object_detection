@@ -231,6 +231,55 @@ distant objects obscured. A detector that commits to a single restored
 representation therefore operates at a fixed point on this accuracy–fidelity
 trade-off.
 
+## A.1 What Makes WRDNet Weather-Resilient
+
+The term *weather-resilient* refers to the ability of a detector to maintain
+accurate performance across a continuum of atmospheric conditions, rather than
+at a single operating point. WRDNet achieves this through four complementary
+mechanisms that jointly address the spatial, severity, and domain dimensions of
+weather variability.
+
+**Spatial resilience via adaptive feature fusion.** Fog is spatially
+non-uniform: near-field regions are only mildly degraded, while distant
+regions are heavily obscured. A detector that commits to a single restored
+image cannot adapt to this spatial variation. WRDNet's Feature Selection Gate
+(FSG) learns a per-pixel weighting $\boldsymbol{\alpha}(\mathbf{x})$ that
+selects between dehazed and original features at every location. In regions
+where dehazing is reliable (distant, fog-obscured areas), the gate favors
+restored features; where dehazing may introduce artifacts (near-field, thin
+fog), it retains the original features. This spatial adaptivity is the first
+pillar of weather resilience.
+
+**Severity resilience via multi-density training.** Fog density $\beta$
+varies continuously in real driving, from light mist to dense fog. A detector
+trained at a single $\beta$ memorizes a specific atmospheric appearance and
+fails to generalize. WRDNet trains on the multi-density structure of Foggy
+Cityscapes, which renders each scene at $\beta \in \{0.005, 0.01, 0.02\}$.
+This enforces fog-severity invariance: the network learns representations that
+remain discriminative across the entire visibility continuum, rather than a
+single operating point. This is the second pillar of weather resilience.
+
+**Depth-conditional resilience via DG-FSG.** The atmospheric scattering model
+couples fog severity to scene depth through $t(\mathbf{x}) =
+e^{-\beta d(\mathbf{x})}$. WRDNet exploits this physical prior by conditioning
+its fusion policy on estimated monocular depth. The Depth-Guided FSG (DG-FSG)
+learns to trust dehazed features more for distant objects and original
+features more for nearby objects, producing a fusion policy that is
+physically consistent with the scattering model. This depth-conditional
+behavior is the third pillar of weather resilience.
+
+**Domain resilience via multi-level domain adaptation.** Synthetic fog differs
+from real fog in its spectral and textural statistics. WRDNet bridges this
+synthetic-to-real gap through a multi-level domain-adaptation strategy that
+aligns the two domains at the input level (FDA), the feature level (DCT
+alignment), and the output level (FSG consistency). This ensures that the
+learned representations transfer to real-world fog, which is the fourth pillar
+of weather resilience.
+
+Together, these four mechanisms enable WRDNet to maintain detection accuracy
+across varying fog density, spatial extent, and domain shift, which is the
+defining property of a weather-resilient detector.
+
 ## B. Architectural Overview
 
 We propose the **Weather-Resilient Detection Unified Network (WRDNet)**, a
