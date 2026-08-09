@@ -49,3 +49,4 @@ my_local_wrdnet-checkpoints/
 
 # Scripts with secrets (don't push to GitHub)
 upload_to_modal.py
+checkpoints_v3/
