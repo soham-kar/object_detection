@@ -1,4 +1,4 @@
-# III. Methodology
+# I. Introduction
 
 ## A. Research Gaps and Contributions
 
@@ -115,71 +115,51 @@ NaNs of float16), a magnitude clamp on the fused features, and a two-phase
 training schedule that first establishes a robust detection baseline before
 enabling the fusion and domain-adaptation modules.
 
-### A.3 Design Provenance
+---
 
-WRDNet is not assembled from isolated components but synthesizes ideas from a
-diverse body of prior work, adapting and extending them to the joint
-defogging-detection setting. We make this lineage explicit to acknowledge the
-intellectual foundations of each design choice and to clarify the boundary
-between adopted techniques and our novel contributions.
+# II. Related Work
 
-**Restoration backbone.** The restoration branch is built upon the
-DehazeFormer-T transformer [15], which we adopt as a strong, lightweight
-dehazing encoder. Its window-based attention and revised normalization layers
-provide an effective feature representation for downstream fusion. We extend
-it with Multi-Angle Attention (MAA) modules on the early encoder stages,
-inspired by the frequency-domain and multi-angle attention design of TCL-Net
-[17], to enhance edge and texture cues that are critical for detecting small
-objects in fog.
+The design of WRDNet is grounded in a rich body of prior work on image
+dehazing, adverse-weather detection, and domain adaptation. We organize this
+review around the principal research directions that motivate our approach,
+and we position WRDNet relative to each.
 
-**Detection backbone.** The detection branch is built upon YOLOv11s
-[25], a modern one-stage detector. We adopt its efficient
-backbone and detection head, and we replace the default 80-class COCO head with
-an 8-class Cityscapes head to align the class semantics with the driving
-domain. The idea of enhancing a YOLO detector for adverse weather through
-attention and multi-scale fusion is inspired by YOLOv8s-WAMNet [16] and
-CAST-YOLO [14], which demonstrate the value of weather-aware detection
-architectures.
+**Classical dehazing.** Early methods rely on hand-crafted priors, most
+notably the Dark Channel Prior (DCP) [1] and its lightweight variants [2, 3,
+4]. These methods estimate the transmission map and atmospheric light from
+statistical priors and recover the scene radiance via the atmospheric
+scattering model. While computationally efficient, they are prone to failure
+under dense fog and overexposed regions, and they do not adapt to the
+downstream detection task.
 
-**Feature fusion.** The core Feature Selection Gate (FSG) is our novel
-contribution, but its design draws on two established ideas. First, the
-per-pixel gating mechanism is conceptually related to attention-based feature
-selection in dehazing networks such as FFA-Net and TCL-Net [17]. Second, the
-Cross-Dimensional Multi-Scale Attention (CDMSA) module that enriches the
-gating context is inspired by the channel, spatial, and cross-scale attention
-designs of YOLOv8s-WAMNet [16]. Our contribution is the *application* of
-learned gating to fuse restoration and detection features at multiple scales,
-which no prior work has done.
+**Learning-based dehazing.** Deep learning methods replace hand-crafted priors
+with learned mappings. Cycle-consistent adversarial networks [7] enable
+unpaired dehazing, while transformer-based methods such as DehazeFormer [15]
+and TCL-Net [17] achieve state-of-the-art restoration quality. However, these
+methods are optimized for perceptual image-quality metrics rather than
+downstream detection performance.
 
-**Domain adaptation.** The multi-level frequency-aware domain adaptation
-strategy synthesizes three ideas. The input-level Fourier Domain Adaptation
-(FDA) is directly adopted from Yang and Soatto [21]. The feature-level DCT
-alignment is inspired by the frequency-domain alignment of AdaDCP, which we
-simplify to a maximum-mean-discrepancy (MMD) formulation for stability. The
-output-level FSG-consistency loss is our novel contribution, extending the
-idea of consistency regularization to the gating maps.
+**Adverse-weather detection.** Recent work enhances detectors for foggy
+conditions through attention and multi-scale fusion, including YOLOv8s-WAMNet
+[16] and CAST-YOLO [14]. These methods improve robustness but do not jointly
+optimize restoration and detection, and they do not exploit depth information.
 
-**Depth guidance.** The depth decoder follows the progressive upsampling
-design of DPT and MiDaS, and the Depth-Guided FSG (DG-FSG) is our novel
-contribution that extends the standard FSG with a depth-conditional gating
-input. This is motivated by the physical coupling between fog and depth in
-the atmospheric scattering model, which prior joint dehazing-detection methods
-such as DEHRFormer and DCL do not exploit for fusion.
+**Domain adaptation.** To bridge the synthetic-to-real gap, Fourier Domain
+Adaptation (FDA) [21] aligns input-level spectral statistics, while
+feature-level alignment methods such as AdaDCP align representations in the
+frequency domain. These methods address the domain gap but focus on a single
+alignment level.
 
-**Data strategy.** The multi-density fog training exploits the multi-scattering
-coefficient structure of the Foggy Cityscapes dataset [12], which prior work
-has largely underutilized. The RandomScale and ColorJitter augmentations are
-standard data-augmentation techniques adopted to mitigate overfitting on the
-limited annotated scenes.
+**Depth estimation.** Monocular depth estimation methods such as DPT and MiDaS
+provide dense depth maps from a single image. Prior joint dehazing-detection
+methods such as DEHRFormer and DCL estimate depth as a byproduct of dehazing
+but do not use it to modulate feature fusion.
 
-**Numerical stability.** The bfloat16 mixed-precision training and the
-magnitude clamp on fused features are engineering contributions that address
-the practical instability of joint training. These are not derived from a
-single prior work but are motivated by the well-known numerical challenges of
-mixed-precision training and the sensitivity of the YOLO detection head's
-Distribution Focal Loss to unbounded feature magnitudes.
+---
 
-## B. Problem Formulation
+# III. Methodology
+
+## A. Problem Formulation
 
 We address the task of object detection under foggy driving conditions. Let
 $\mathcal{I} \in \mathbb{R}^{H \times W \times 3}$ denote a foggy RGB image
@@ -215,7 +195,7 @@ distant objects obscured. A detector that commits to a single restored
 representation therefore operates at a fixed point on this accuracy–fidelity
 trade-off.
 
-## C. Architectural Overview
+## B. Architectural Overview
 
 We propose the **Weather-Resilient Detection Unified Network (WRDNet)**, a
 multi-branch architecture that jointly performs restoration, detection, and
@@ -242,7 +222,7 @@ representation is injected *at the feature level* through the FSG, allowing the
 network to selectively exploit dehazed cues where they are beneficial without
 committing to a single restored image.
 
-## D. Feature Selection Gate (FSG)
+## C. Feature Selection Gate (FSG)
 
 The central contribution of WRDNet is the Feature Selection Gate, which learns
 a spatially varying interpolation between restoration and detection features.
@@ -298,7 +278,7 @@ which yields $\sigma(-2.0) \approx 0.12$, biasing the gate toward the original
 features early in training and preventing the detection loss from spiking on
 unstable restored features.
 
-## E. Depth-Guided FSG (DG-FSG)
+## D. Depth-Guided FSG (DG-FSG)
 
 For the depth-aware variant, we augment the gating network with a monocular
 depth estimate. A lightweight depth decoder $\mathcal{D}$ progressively
@@ -317,7 +297,7 @@ benefit more from dehazing, so the gate can learn a depth-conditional fusion
 policy. The depth decoder is supervised with a scale-invariant loss [24] on
 synthetic data.
 
-## F. Multi-Density Fog Training
+## E. Multi-Density Fog Training
 
 A central limitation of prior foggy-driving benchmarks is that they train on a
 single fog density $\beta$, causing the detector to memorize a specific
@@ -339,7 +319,7 @@ images rendered at density $\beta$. This multi-density strategy is a
 principled, physically grounded form of data expansion that directly targets
 the task's core challenge.
 
-## F.1 Datasets
+## E.1 Datasets
 
 WRDNet is trained and evaluated on a combination of synthetic and real-world
 adverse-weather datasets. Table I summarizes the datasets, their roles, and
@@ -375,7 +355,7 @@ Driving dataset [12], a standard benchmark of real foggy driving scenes with
 bounding-box annotations, and the Foggy Zurich dataset [27] to assess
 cross-domain generalization to an unseen real-world fog distribution.
 
-## G. Domain Adaptation
+## F. Domain Adaptation
 
 To bridge the gap between synthetic fog and real-world fog, we incorporate
 unsupervised domain adaptation using real foggy images from the ACDC dataset
@@ -407,7 +387,7 @@ where the domain weight $\lambda_{\text{dom}}$ is linearly ramped from $0$ to
 its target value over the first epochs to avoid destabilizing the detector
 early in training.
 
-## H. Training Procedure
+## G. Training Procedure
 
 WRDNet is trained in two stages. In **Phase 0**, the restoration branch is
 frozen and the detection branch is trained on the multi-density synthetic data
