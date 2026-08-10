@@ -75,8 +75,12 @@ class DepthGuidedFSG(nn.Module):
         self.output_bns = self._make_output_bns()
 
         # Magnitude clamp on fused features before they enter the YOLO neck.
-        # Prevents DFL collapse (x-coords pinned to left edge) from CDMSA spikes.
-        self.fsg_clamp = 10.0
+        # Standard YOLO features range ~[-8, +8]. A clamp of ±20 gives the FSG
+        # double the dynamic range to learn expressive fusion policies while
+        # still guarding against the CDMSA's magnitude-36 spikes. Early in
+        # training, BN ≈ identity (running stats at defaults), so the clamp
+        # protects the DFL during this critical phase.
+        self.fsg_clamp = 20.0
 
     def _make_gate(self, channels: int, depth_channels: int, prev_channels: int = None) -> nn.Module:
         """Create a single DG-FSG gate for one scale."""
@@ -166,7 +170,8 @@ class DepthGuidedFSG(nn.Module):
             # Fusion
             fused = alpha * f_rest + (1.0 - alpha) * f_orig
 
-            # Normalize fused features before they enter the YOLO neck
+            # Normalize fused features before they enter the YOLO neck.
+            # BatchNorm provides smooth normalization without hard clipping.
             fused = self.output_bns[i](fused)
 
             # Clamp to safe magnitude range to prevent DFL collapse
