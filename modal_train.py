@@ -323,20 +323,20 @@ def train(
         # Phase 1 with a magnitude clamp on the fused features.
         config.use_fsg = False
         if batch_size is None:
-            # T4 (16GB): 2, L4 (24GB): 6, A100 (40GB): 48, A100 (80GB): 64
+            # T4 (16GB): 2, L4 (24GB): 6, A100 (40GB): 24, A100 (80GB): 48
             # Phase 0 freezes DehazeFormer → only YOLO+FSG train → low memory.
             # NOTE: 1024×512 uses ~1.28x more VRAM than 640×640.
-            # On the 40GB A100, bs=24 uses ~14GB. Increasing to 48 fills the
-            # card to ~28GB (safe, ~12GB headroom) for faster training and
-            # more stable gradients. bs=64 would hit ~37GB (too risky on 40GB).
+            # bs=24 uses ~14GB and is SAFE on the 40GB A100 (verified in smoke
+            # test). bs=48 OOMs because the DehazeFormer feature interpolate
+            # spikes to 13.5GB at 1024×512. Keep bs=24 for the 40GB card.
             if gpu_mem_gb <= 16:
                 config.batch_size = 2   # T4 (with AMP)
             elif gpu_mem_gb < 24:
                 config.batch_size = 4   # L4/A10G
             elif gpu_mem_gb < 70:
-                config.batch_size = 48  # A100-40GB (1024×512, ~28GB)
+                config.batch_size = 24  # A100-40GB (1024×512, ~14GB, safe)
             else:
-                config.batch_size = 64  # A100-80GB or L40S (Phase 0, low memory)
+                config.batch_size = 48  # A100-80GB or L40S (Phase 0, low memory)
         if epochs is None:
             # Phase 0: 50 epochs (sweet spot). Starting from COCO pretrained
             # weights, the backbone already knows object shapes — it just needs
