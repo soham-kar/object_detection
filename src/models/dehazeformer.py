@@ -54,13 +54,6 @@ class DehazeFormerWrapper(nn.Module):
         self.output_size = self._to_tuple(output_size)
         self.use_maa = use_maa
 
-    @staticmethod
-    def _to_tuple(size):
-        """Convert int to (H, W) tuple, or pass through tuple."""
-        if isinstance(size, (list, tuple)):
-            return tuple(size)
-        return (size, size)
-
         # ── Build actual DehazeFormer ──
         self.dehazeformer = self._build_dehazeformer(variant)
 
@@ -88,6 +81,13 @@ class DehazeFormerWrapper(nn.Module):
         else:
             self.maa_stage1 = nn.Identity()
             self.maa_stage2 = nn.Identity()
+
+    @staticmethod
+    def _to_tuple(size):
+        """Convert int to (H, W) tuple, or pass through tuple."""
+        if isinstance(size, (list, tuple)):
+            return tuple(size)
+        return (size, size)
 
     def _build_dehazeformer(self, variant: str) -> nn.Module:
         """Build the actual DehazeFormer model."""
