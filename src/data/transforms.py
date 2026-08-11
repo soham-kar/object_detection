@@ -211,16 +211,21 @@ class Compose:
         return image, target
 
 
-def get_train_transforms(input_size=640, max_depth=80.0):
+def get_train_transforms(input_size=(512, 1024), max_depth=80.0):
     """Get training transforms.
 
     Includes RandomScale, RandomHorizontalFlip, and ColorJitter to reduce
     overfitting on the small (~2975 image) Foggy Cityscapes training set.
     The model was memorizing the training set by epoch 4 (mAP peaked then
     declined). These augmentations force it to learn general shapes instead.
+
+    input_size: (H, W) tuple for 2:1 aspect ratio (e.g., (512, 1024)).
     """
+    # Normalize to (H, W) tuple
+    if isinstance(input_size, int):
+        input_size = (input_size, input_size)
     return Compose([
-        Resize((input_size, input_size)),
+        Resize(input_size),
         RandomScale(scale_range=(0.5, 1.5), p=0.5),
         RandomHorizontalFlip(p=0.5),
         ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05, p=0.5),
@@ -229,10 +234,12 @@ def get_train_transforms(input_size=640, max_depth=80.0):
     ])
 
 
-def get_val_transforms(input_size=640, max_depth=80.0):
+def get_val_transforms(input_size=(512, 1024), max_depth=80.0):
     """Get validation/test transforms (no augmentation)."""
+    if isinstance(input_size, int):
+        input_size = (input_size, input_size)
     return Compose([
-        Resize((input_size, input_size)),
+        Resize(input_size),
         Normalize(),
         DepthNormalize(max_depth=max_depth),
     ])

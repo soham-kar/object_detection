@@ -30,7 +30,11 @@ class DepthDecoder(nn.Module):
     def __init__(self, bottleneck_channels: int = 96, output_size: int = 640):
         super().__init__()
 
-        self.output_size = output_size
+        # Normalize to (H, W) tuple to support 2:1 aspect ratio
+        if isinstance(output_size, (list, tuple)):
+            self.output_size = tuple(output_size)
+        else:
+            self.output_size = (output_size, output_size)
 
         # Stage 1: bottleneck → 2× upsampling
         self.up1 = nn.Sequential(
@@ -69,6 +73,6 @@ class DepthDecoder(nn.Module):
         x = self.up1(bottleneck)     # [B, 64, 160, 160]
         x = self.refine(x)           # [B, 16, 160, 160]
         depth_160 = self.output(x)   # [B, 1, 160, 160]
-        depth_640 = F.interpolate(depth_160, size=(self.output_size, self.output_size),
+        depth_640 = F.interpolate(depth_160, size=self.output_size,
                                   mode='bilinear', align_corners=False)
         return depth_160, depth_640

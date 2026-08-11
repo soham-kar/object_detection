@@ -49,9 +49,17 @@ class DehazeFormerWrapper(nn.Module):
     ):
         super().__init__()
         self.variant = variant
-        self.input_size = input_size
-        self.output_size = output_size
+        # Normalize to (H, W) tuples to support 2:1 aspect ratio
+        self.input_size = self._to_tuple(input_size)
+        self.output_size = self._to_tuple(output_size)
         self.use_maa = use_maa
+
+    @staticmethod
+    def _to_tuple(size):
+        """Convert int to (H, W) tuple, or pass through tuple."""
+        if isinstance(size, (list, tuple)):
+            return tuple(size)
+        return (size, size)
 
         # ── Build actual DehazeFormer ──
         self.dehazeformer = self._build_dehazeformer(variant)
@@ -151,18 +159,18 @@ class DehazeFormerWrapper(nn.Module):
             restored_image: [B, 3, 640, 640]
         """
         # Resize input to dehaze resolution
-        if x.shape[-2:] != (self.input_size, self.input_size):
-            x = F.interpolate(x, size=(self.input_size, self.input_size),
+        if x.shape[-2:] != self.input_size:
+            x = F.interpolate(x, size=self.input_size,
                             mode='bilinear', align_corners=False)
 
         # Run actual DehazeFormer
-        restored = self.dehazeformer(x)  # [B, 3, 320, 320]
+        restored = self.dehazeformer(x)  # [B, 3, H, W]
 
         # Upsample restored IMAGE to detection resolution
-        if restored.shape[-2:] != (self.output_size, self.output_size):
+        if restored.shape[-2:] != self.output_size:
             restored = F.interpolate(
                 restored,
-                size=(self.output_size, self.output_size),
+                size=self.output_size,
                 mode='bilinear',
                 align_corners=False,
             )
@@ -176,8 +184,8 @@ class DehazeFormerWrapper(nn.Module):
         Returns:
             dict with keys 'P3', 'P4', 'P5' (matching YOLO backbone scales)
         """
-        if x.shape[-2:] != (self.input_size, self.input_size):
-            x = F.interpolate(x, size=(self.input_size, self.input_size),
+        if x.shape[-2:] != self.input_size:
+            x = F.interpolate(x, size=self.input_size,
                             mode='bilinear', align_corners=False)
 
         features = self._extract_encoder_features(x)
@@ -188,9 +196,9 @@ class DehazeFormerWrapper(nn.Module):
 
         # Project to YOLO channel dimensions
         return {
-            'P3': self.proj_stage1(features['stage1']),  # [B, 256, 320, 320]
-            'P4': self.proj_stage2(features['stage2']),  # [B, 512, 160, 160]
-            'P5': self.proj_stage3(features['stage3']),  # [B, 1024, 80, 80]
+            'P3': self.proj_stage1(features['stage1']),
+            'P4': self.proj_stage2(features['stage2']),
+            'P5': self.proj_stage3(features['stage3']),
         }
 
     def get_stage2_features(self, x: torch.Tensor) -> torch.Tensor:
@@ -198,8 +206,8 @@ class DehazeFormerWrapper(nn.Module):
         Returns raw Stage 2 features for DCT alignment.
         Shape: [B, 48, 160, 160] for 320×320 input
         """
-        if x.shape[-2:] != (self.input_size, self.input_size):
-            x = F.interpolate(x, size=(self.input_size, self.input_size),
+        if x.shape[-2:] != self.input_size:
+            x = F.interpolate(x, size=self.input_size,
                             mode='bilinear', align_corners=False)
         features = self._extract_encoder_features(x)
         return features['stage2']
@@ -207,10 +215,10 @@ class DehazeFormerWrapper(nn.Module):
     def get_bottleneck(self, x: torch.Tensor) -> torch.Tensor:
         """
         Returns bottleneck features for fog density estimation and depth decoder.
-        Shape: [B, 96, 80, 80] for 320×320 input
+        Shape: [B, 96, H/4, W/4] for input size
         """
-        if x.shape[-2:] != (self.input_size, self.input_size):
-            x = F.interpolate(x, size=(self.input_size, self.input_size),
+        if x.shape[-2:] != self.input_size:
+            x = F.interpolate(x, size=self.input_size,
                             mode='bilinear', align_corners=False)
         features = self._extract_encoder_features(x)
         return features['stage3']

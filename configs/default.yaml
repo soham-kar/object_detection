@@ -7,8 +7,8 @@ model:
   pretrained: true
   num_classes: 8          # Cityscapes detection classes (0=person..7=bicycle)
   replace_head: true      # Replace 80-class COCO head with 8-class head (semantics must match labels)
-  input_size_dehaze: 480   # DehazeFormer resolution (480 = sweet spot for fusion quality vs speed)
-  input_size_detect: 640
+  input_size_dehaze: [384, 768]   # DehazeFormer resolution (2:1, lighter than detect)
+  input_size_detect: [512, 1024]  # YOLO resolution (2:1 aspect ratio, Height, Width)
   fsg_channels: [256, 256, 512]  # P3, P4, P5 channels (verified from YOLOv11s)
   use_depth: true
   use_dg_fsg: false  # Set to true for E12 (DG-FSG experiment)
@@ -20,7 +20,7 @@ data:
   # beta_0.01, beta_0.02 for every image. Training on all 3 densities triples
   # the data (2975→8925) and makes the model robust to fog severity.
   fog_density: ['0.005', '0.01', '0.02']
-  input_size: 640
+  input_size: [512, 1024]  # (H, W) — 2:1 aspect ratio
   # Use Cityscapes train + val for training (we evaluate on ACDC/Foggy Driving,
   # so we don't need to hold out Cityscapes val). test has no labels.
   train_splits: ['train', 'val']

@@ -69,7 +69,9 @@ class WRDNetEvaluator:
                 # We need to normalize to [0,1] for IoU computation with GT (which is normalized)
 
                 B = raw_preds.shape[0]
-                input_size = 640  # YOLO input size (config.input_size_detect)
+                # YOLO input size — (H, W) tuple for 2:1 aspect ratio.
+                # Box coords are in pixel space; normalize x by width, y by height.
+                input_h, input_w = 512, 1024  # YOLO input size (config.input_size_detect)
 
                 for b in range(B):
                     pred = raw_preds[b]  # [84, 8400]
@@ -93,8 +95,12 @@ class WRDNetEvaluator:
                     confs = max_conf[mask]   # [N]
                     cls_ids = max_cls[mask]  # [N]
 
-                    # Normalize to [0,1] by dividing by input_size
-                    boxes_norm = boxes / input_size
+                    # Normalize to [0,1]: x by width, y by height (2:1 aspect ratio)
+                    boxes_norm = boxes.clone()
+                    boxes_norm[:, 0] = boxes[:, 0] / input_w  # cx / width
+                    boxes_norm[:, 1] = boxes[:, 1] / input_h  # cy / height
+                    boxes_norm[:, 2] = boxes[:, 2] / input_w  # w / width
+                    boxes_norm[:, 3] = boxes[:, 3] / input_h  # h / height
 
                     # Convert cx,cy,w,h to x1,y1,x2,y2 (normalized)
                     x1 = boxes_norm[:, 0] - boxes_norm[:, 2] / 2
