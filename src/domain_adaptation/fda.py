@@ -35,7 +35,7 @@ class FDATransform:
             adapted_img: [B, 3, H, W] style-transferred image
         """
         # Ensure same spatial size
-        if synth_img.shape != real_img.shape:
+        if synth_img.shape[2:] != real_img.shape[2:]:
             real_img = torch.nn.functional.interpolate(
                 real_img,
                 size=synth_img.shape[2:],
@@ -51,6 +51,13 @@ class FDATransform:
         amp_s = torch.abs(fft_synth)
         phase_s = torch.angle(fft_synth)
         amp_r = torch.abs(fft_real)
+
+        # Handle batch size mismatch (1:3 ratio → B_s = 3 × B_r).
+        # Tile the real amplitude along the batch dim so it broadcasts with
+        # the larger synthetic batch. B_s is a multiple of B_r by construction.
+        if amp_s.shape[0] != amp_r.shape[0]:
+            repeat = amp_s.shape[0] // amp_r.shape[0]
+            amp_r = amp_r.repeat(repeat, 1, 1, 1)
 
         # Low-frequency mask
         h, w = synth_img.shape[-2:]

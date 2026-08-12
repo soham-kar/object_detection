@@ -37,28 +37,39 @@ class PairedDADataset(Dataset):
     """
     Wraps a synthetic dataset and a real dataset for domain adaptation.
 
-    Each __getitem__ returns a dict with both 'synth' and 'real' sub-dicts.
-    When datasets have different lengths, the shorter one is cycled.
+    Implements a 1:3 real:synth ratio at the BATCH level: each __getitem__
+    returns 3 synthetic samples + 1 real sample. This reduces DA pressure
+    (the real dataset is small and heavily recycled) so DA losses don't
+    overpower detection losses.
+
+    The DataLoader batch_size should be set to the number of (3-synth, 1-real)
+    groups. Total images per step = batch_size * 4 (3 synth + 1 real each).
     """
 
-    def __init__(self, synth_dataset: Dataset, real_dataset: Dataset):
+    def __init__(self, synth_dataset: Dataset, real_dataset: Dataset, synth_per_real: int = 3):
         self.synth_dataset = synth_dataset
         self.real_dataset = real_dataset
-        self._len = max(len(synth_dataset), len(real_dataset))
+        self.synth_per_real = synth_per_real  # 3 synthetic per 1 real
+        # Length is driven by the synthetic dataset (the labeled, primary signal)
+        self._len = len(synth_dataset)
 
     def __len__(self):
         return self._len
 
     def __getitem__(self, idx):
-        synth_idx = idx % len(self.synth_dataset)
+        # Sample `synth_per_real` synthetic images for every 1 real image
+        synth_idxs = [
+            (idx * self.synth_per_real + j) % len(self.synth_dataset)
+            for j in range(self.synth_per_real)
+        ]
         real_idx = idx % len(self.real_dataset)
 
-        synth_sample = self.synth_dataset[synth_idx]
+        synth_samples = [self.synth_dataset[i] for i in synth_idxs]
         real_sample = self.real_dataset[real_idx]
 
         return {
-            'synth': synth_sample,
-            'real': real_sample,
+            'synth': synth_samples,  # list of synth_per_real samples
+            'real': real_sample,      # single real sample
         }
 
 
@@ -177,9 +188,16 @@ def build_dataloaders(config) -> Tuple[DataLoader, Optional[DataLoader]]:
         collate = wrdnet_collate_fn
 
     # ── Build dataloaders ──
+    # With the 1:3 PairedDADataset, each item = 3 synth + 1 real (4 images).
+    # config.batch_size is the TOTAL images per step, so the DataLoader
+    # batch_size is batch_size // 4 (each item expands to 4 images).
+    loader_batch = batch_size
+    if collate == paired_collate_fn:
+        loader_batch = max(1, batch_size // 4)
+
     train_loader = DataLoader(
         train_dataset,
-        batch_size=batch_size,
+        batch_size=loader_batch,
         shuffle=True,
         num_workers=num_workers,
         pin_memory=True,

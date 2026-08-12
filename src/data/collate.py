@@ -52,9 +52,18 @@ def paired_collate_fn(batch: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     Collate function for paired (synthetic, real) domain adaptation batches.
 
-    Each item in batch is {'synth': {...}, 'real': {...}}.
+    Each item in batch is {'synth': [sample, sample, sample], 'real': sample}
+    where 'synth' is a LIST of synth_per_real samples (1:3 ratio) and 'real'
+    is a single sample. The collate flattens all synth samples into one batch
+    and all real samples into another, so the resulting 'synth' batch is
+    synth_per_real × larger than the 'real' batch.
     """
-    synth_batch = [b['synth'] for b in batch]
+    # Flatten all synth samples (each item contributes synth_per_real samples)
+    synth_batch = []
+    for b in batch:
+        synth_batch.extend(b['synth'])
+
+    # Collect all real samples (one per item)
     real_batch = [b['real'] for b in batch]
 
     return {

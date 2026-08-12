@@ -44,8 +44,10 @@ training:
   lambda_domain: 0.02   # Reduced from 0.1 (prevents instant MMD collapse)
   lambda_fsg: 0.01
 
-  # Domain warmup — linearly ramp lambda_domain from 0 to its value over first N epochs
-  domain_warmup_epochs: 10
+  # Domain warmup — linearly ramp lambda_domain from 0 to its value over first N epochs.
+  # Extended 10 → 25: gives the detector time to fully adapt to the FSG before
+  # DA gradients start pulling (prevents the Phase 1 oscillation).
+  domain_warmup_epochs: 25
 
   # Logging
   log_interval: 5

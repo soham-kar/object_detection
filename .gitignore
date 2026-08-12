@@ -20,6 +20,8 @@ experiments/
 runs/
 wandb/
 checkpoints_v2/
+checkpoints/
+my_local_wrdnet-checkpoints/
 
 # Pretrained weights
 *.pt
