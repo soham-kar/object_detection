@@ -50,10 +50,21 @@ class FeatureSelectionGate(nn.Module):
                 nn.Conv2d(ch // 4, 1, kernel_size=3, padding=1),
                 nn.Sigmoid(),  # alpha in [0, 1]
             )
-            # Initialize the final alpha conv bias to -2.0 so Sigmoid(-2.0) ≈ 0.12.
-            # This forces the gate to TRUST ORIGINAL features early in training,
-            # preventing the detection loss from spiking on blurred restored features.
-            nn.init.constant_(gate[-2].bias, -2.0)
+            # Initialize the final alpha conv to produce ~0 alpha so the gate
+            # starts as near-IDENTITY (fused ≈ original features). This is
+            # critical because the FSG is NOT trained in Phase 0 (it's bypassed
+            # with use_fsg=False), so its weights are random when Phase 1 turns
+            # it on. Random gate weights produce spatially-varying alpha (0-1
+            # across the image), which shifts the feature distribution the YOLO
+            # head was trained on → box collapse → mAP 0.0000.
+            #
+            # Fix: zero-init the final conv weights + set bias to -4.0 so
+            # logits ≈ -4.0 everywhere → Sigmoid(-4.0) ≈ 0.018 → fused ≈ 0.98*orig.
+            # The YOLO head sees nearly the same features as Phase 0, so the
+            # FSG shock is minimal. The gate still learns (gradients flow
+            # through the zero weights) and alpha rises as training proceeds.
+            nn.init.zeros_(gate[-2].weight)
+            nn.init.constant_(gate[-2].bias, -4.0)
             self.gates.append(gate)
 
         # Output BatchNorm per scale to normalize fused features before they

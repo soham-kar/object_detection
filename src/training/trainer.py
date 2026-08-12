@@ -195,6 +195,33 @@ class WRDNetTrainer:
                 param.requires_grad = True
             print("  Phase 1: All components trainable (DehazeFormer unfrozen)")
 
+    def reset_fsg_gate(self):
+        """
+        Re-initialize the FSG gate to near-identity (alpha ≈ 0) so the YOLO
+        head sees nearly the same features it was trained on in Phase 0.
+
+        The FSG is bypassed in Phase 0 (use_fsg=False), so its gate weights
+        are RANDOM when Phase 1 turns it on. Loading the Phase 0 checkpoint
+        overwrites the model's fresh zero-init with those random weights,
+        which produce spatially-varying alpha (0-1) → feature-distribution
+        shift → box collapse → mAP 0.0000.
+
+        This re-applies the near-identity init AFTER checkpoint load:
+          - zero the final gate conv weights (logits ≈ bias everywhere)
+          - set bias to -4.0 → Sigmoid(-4.0) ≈ 0.018 → fused ≈ 0.98*orig
+        Gradients still flow through the zero weights, so the gate learns.
+        """
+        import torch.nn as nn
+        if not hasattr(self.model, 'fsg') or self.model.fsg is None:
+            print("  [reset_fsg_gate] No FSG found, skipping")
+            return
+        gates = self.model.fsg.gates
+        for gate in gates:
+            # gate[-2] is the final Conv2d (before Sigmoid)
+            nn.init.zeros_(gate[-2].weight)
+            nn.init.constant_(gate[-2].bias, -4.0)
+        print(f"  [reset_fsg_gate] Re-initialized {len(gates)} FSG gates to near-identity (alpha≈0.018)")
+
     def _move_to_device(self, batch: dict) -> dict:
         """Move batch dict to device, handling tensor lists (bboxes)."""
         moved = {}

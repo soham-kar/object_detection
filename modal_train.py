@@ -445,6 +445,11 @@ def train(
                 print(f"Loading Phase 0 checkpoint: {ckpt_path}")
                 print("  → Resetting BatchNorm stats for new batch size (T4→A100)")
                 trainer.load_checkpoint(ckpt_path, reset_bn=True, strict=False)
+                # The Phase 0 checkpoint contains RANDOM FSG gate weights (FSG
+                # was bypassed in Phase 0). Re-init the gate to near-identity
+                # (alpha≈0) so the YOLO head sees nearly the same features it
+                # was trained on → prevents the box-collapse / mAP 0.0000 shock.
+                trainer.reset_fsg_gate()
             else:
                 print("WARNING: No Phase 0 checkpoint found, starting from scratch.")
     else:
