@@ -353,9 +353,16 @@ def train(
             # Use a low LR so the new head learns stably.
             config.lr = 1e-4
     elif phase == "phase1":
-        config.use_fda = True
-        config.use_dct_align = True
-        config.use_fsg_consistency = True
+        # BINARY-SEARCH DEBUG: when disable_da_losses is true, turn OFF all DA
+        # losses so Phase 1 runs as pure fine-tuning (FSG ON, DehazeFormer
+        # unfrozen, no DA). This isolates whether the mAP-0.0000 crash is from
+        # the DA losses vs the FSG/unfrozen-DehazeFormer themselves.
+        disable_da = getattr(config, 'disable_da_losses', False)
+        config.use_fda = not disable_da
+        config.use_dct_align = not disable_da
+        config.use_fsg_consistency = not disable_da
+        if disable_da:
+            print("  [DEBUG] disable_da_losses=True → Phase 1 running as PURE fine-tuning (all DA losses OFF)")
         config.real_datasets = ["acdc"]  # ONLY ACDC for DA training. Zurich is for evaluation only!
         if batch_size is None:
             # 1:3 real:synth ratio — config.batch_size is TOTAL images per step.
