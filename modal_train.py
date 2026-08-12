@@ -422,18 +422,28 @@ def train(
     # Resume from checkpoint if requested
     # Auto-resume: if checkpoint exists, always load it (preemption recovery)
     if phase == "phase1" and resume:
-        # First check if Phase 1 already has checkpoints (resume mid-Phase 1)
-        phase1_latest = os.path.join(ckpt_dir, "latest.pth")
-        if not os.path.exists(phase1_latest):
-            try:
-                ckpts = [f for f in os.listdir(ckpt_dir) if f.startswith("epoch_") and f.endswith(".pth")]
-                if ckpts:
-                    ckpts.sort(key=lambda x: int(x.replace("epoch_", "").replace(".pth", "")))
-                    phase1_latest = os.path.join(ckpt_dir, ckpts[-1])
-            except:
-                pass
+        # FORCE-FRESH: if force_fresh_phase1 is set, ignore any existing Phase 1
+        # checkpoints and always load fresh from Phase 0 + reset the FSG gate.
+        # This prevents the footgun where stale Phase 1 checkpoints (with random
+        # FSG weights from before the near-identity fix) are resumed instead of
+        # applying the FSG fix.
+        force_fresh = getattr(config, 'force_fresh_phase1', False)
+        if force_fresh:
+            print("  [DEBUG] force_fresh_phase1=True → ignoring existing Phase 1 checkpoints, loading fresh from Phase 0")
+            phase1_latest = None
+        else:
+            # First check if Phase 1 already has checkpoints (resume mid-Phase 1)
+            phase1_latest = os.path.join(ckpt_dir, "latest.pth")
+            if not os.path.exists(phase1_latest):
+                try:
+                    ckpts = [f for f in os.listdir(ckpt_dir) if f.startswith("epoch_") and f.endswith(".pth")]
+                    if ckpts:
+                        ckpts.sort(key=lambda x: int(x.replace("epoch_", "").replace(".pth", "")))
+                        phase1_latest = os.path.join(ckpt_dir, ckpts[-1])
+                except:
+                    pass
         
-        if os.path.exists(phase1_latest):
+        if phase1_latest is not None and os.path.exists(phase1_latest):
             # Resume from existing Phase 1 checkpoint (mid-Phase 1 recovery)
             print(f"Auto-resuming Phase 1 from {phase1_latest}")
             trainer.load_checkpoint(phase1_latest)

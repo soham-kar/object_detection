@@ -72,6 +72,12 @@ domain_adaptation:
   # DA losses vs the FSG/unfrozen-DehazeFormer themselves.
   disable_da_losses: false
 
+  # FORCE-FRESH-PHASE1 FLAG: when true, Phase 1 IGNORES any existing Phase 1
+  # checkpoints and always loads fresh from Phase 0 + resets the FSG gate to
+  # near-identity. This prevents the footgun where stale Phase 1 checkpoints
+  # (with random FSG weights) are resumed instead of applying the FSG fix.
+  force_fresh_phase1: false
+
   # FDA schedule (only active when use_fda: true)
   fda_start_epoch: 30
   fda_beta_schedule:
