@@ -70,13 +70,15 @@ domain_adaptation:
   # ALL DA losses OFF (FDA, DCT, FSG-consistency). FSG stays ON and DehazeFormer
   # stays unfrozen. This isolates whether the mAP-0.0000 crash is caused by the
   # DA losses vs the FSG/unfrozen-DehazeFormer themselves.
-  disable_da_losses: false
+  # NOTE: set to TRUE for the current binary-search debugging.
+  disable_da_losses: true
 
   # FORCE-FRESH-PHASE1 FLAG: when true, Phase 1 IGNORES any existing Phase 1
   # checkpoints and always loads fresh from Phase 0 + resets the FSG gate to
   # near-identity. This prevents the footgun where stale Phase 1 checkpoints
   # (with random FSG weights) are resumed instead of applying the FSG fix.
-  force_fresh_phase1: false
+  # NOTE: set to TRUE for the current binary-search debugging.
+  force_fresh_phase1: true
 
   # FDA schedule (only active when use_fda: true)
   fda_start_epoch: 30
