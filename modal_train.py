@@ -278,7 +278,12 @@ def train(
     elif phase == "phase0":
         config_file = "configs/default.yaml"
     elif phase == "phase1":
-        config_file = "configs/wrnet_s.yaml"
+        # Use default.yaml for Phase 1 — it contains ALL the current settings
+        # (1024×512 resolution, 8-class head, multi-density fog, 1:3 DA ratio,
+        # debug flags disable_da_losses/force_fresh_phase1, correct LR 2e-4).
+        # The old wrnet_s.yaml is STALE (640×640, DG-FSG, lr 5e-4, lambda_domain
+        # 0.1) and caused the mAP-0.0000 crashes. Do NOT use it.
+        config_file = "configs/default.yaml"
     else:
         config_file = "configs/default.yaml"
 
