@@ -42,7 +42,7 @@ app = modal.App("wrdnet-training")
 
 # GPU selection — change this to match your Modal plan
 # Free tier: "T4" | Paid: "L4", "A10G", "A100-40GB", "A100-80GB", "L40S"
-GPU_TYPE = "A100-40GB"  # Phase 1 on A100 (paid, ~$15 for 120 epochs)
+GPU_TYPE = "A100-80GB"  # Phase 1 on A100-80GB (2× memory → bs=12, 2× faster, no OOM)
 
 # Persistent volume for data and checkpoints
 DATA_VOLUME = modal.Volume.from_name("wrdnet-data", create_if_missing=True)
@@ -78,6 +78,11 @@ image = (
     .run_commands(
         "git clone https://github.com/soham-kar/object_detection.git /tmp/object_detection",
     )
+    # Fix CUDA OOM from memory fragmentation. The DehazeFormer feature
+    # interpolate at 1024×512 allocates large blocks; expandable_segments lets
+    # PyTorch grow segments instead of failing on fragmentation. This is the
+    # fix recommended by the OOM error itself.
+    .env({"PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"})
 )
 
 
@@ -382,14 +387,17 @@ def train(
             #
             # NOTE: DehazeFormer is UNFROZEN in Phase 1, so it retains activations
             # for backward → much higher memory than Phase 0 (where it was frozen).
-            # At 1024×512, bs=12 OOMs on the 40GB A100 (verified: OOM at epoch 32).
-            # Use bs=6 (4 synth + 2 real) to stay within memory.
+            # At 1024×512, bs=6 uses ~38GB on the 40GB A100 (OOM at the feature
+            # interpolate). On the 80GB A100, bs=12 uses ~76GB (2× memory, 2×
+            # faster, safe headroom). bs=16 would exceed 80GB — too risky.
             if gpu_mem_gb <= 16:
                 config.batch_size = 2    # T4 (with AMP): 2 total = 1 synth + 1 real
             elif gpu_mem_gb < 24:
                 config.batch_size = 4    # L4/A10G: 4 total = 3 synth + 1 real
+            elif gpu_mem_gb < 70:
+                config.batch_size = 6    # A100-40GB: 6 total = 4 synth + 2 real (~38GB)
             else:
-                config.batch_size = 6    # A100-40GB/80GB: 6 total = 4 synth + 2 real
+                config.batch_size = 12   # A100-80GB/L40S: 12 total = 8 synth + 4 real (~76GB)
         if epochs is None:
             config.epochs = 120  # Phase 1: 120 epochs (more DA time, ~10hr on A100)
         if lr is None:
