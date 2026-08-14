@@ -82,7 +82,13 @@ image = (
     # interpolate at 1024×512 allocates large blocks; expandable_segments lets
     # PyTorch grow segments instead of failing on fragmentation. This is the
     # fix recommended by the OOM error itself.
-    .env({"PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"})
+    # YOLO_AUTOINSTALL=false disables ultralytics' auto-install of optional
+    # deps (e.g. pi-heif) which otherwise loops on every worker spawn and
+    # delays training start.
+    .env({
+        "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
+        "YOLO_AUTOINSTALL": "false",
+    })
 )
 
 
