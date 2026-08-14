@@ -401,8 +401,13 @@ class WRDNetTrainer:
 
     def _save_checkpoint(self, filename: str):
         """Save model checkpoint."""
+        # Save current_epoch + 1 so that on resume, the training loop starts at
+        # the NEXT epoch (not re-runs the just-completed one). The checkpoint is
+        # saved AFTER an epoch completes, so self.current_epoch is the completed
+        # epoch. Saving current_epoch+1 makes `for epoch in range(current_epoch,
+        # epochs)` start at the next epoch after preemption recovery.
         checkpoint = {
-            'epoch': self.current_epoch,
+            'epoch': self.current_epoch + 1,
             'model_state_dict': self.model.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
             'scheduler_state_dict': self.scheduler.state_dict() if self.scheduler else None,
