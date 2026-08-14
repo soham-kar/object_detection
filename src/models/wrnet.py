@@ -268,7 +268,13 @@ class WRDNet(nn.Module):
         outputs['detections_s'] = detections_s
 
         # ── Real path (for domain adaptation) ──
-        if real_input is not None:
+        # Only run the real path when DCT or FSG-consistency is enabled — those
+        # are the only losses that need real-image features. For FDA-only, the
+        # FDA transform is applied in the trainer (before forward_train), so the
+        # real path's outputs (detections_r, alpha_r) are UNUSED. Running the
+        # full DehazeFormer + YOLO on real images is pure wasted compute that
+        # roughly doubles epoch time. Skip it when not needed.
+        if real_input is not None and (self.use_dct_align or self.use_fsg_consistency):
             real_img = real_input['image']
 
             with torch.set_grad_enabled(self.use_fsg_consistency):
