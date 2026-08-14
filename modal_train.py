@@ -402,16 +402,21 @@ def train(
             #
             # ⚠️ OOM TRAP: when DA is ON, the model runs the forward pass on BOTH
             # synth AND real images (real path for FDA/DCT/FSG-consistency). This
-            # roughly doubles memory vs DA-off (which only processes synth). So
-            # with DA on, drop to bs=6 (4 synth + 2 real) to stay within 80GB.
+            # roughly doubles memory vs DA-off (which only processes synth).
+            #
+            # ⚠️ THROUGHPUT: the paired collate divides batch_size by 4
+            # (loader_batch = batch_size//4, each item = 3 synth + 1 real).
+            # So batch_size=6 → loader_batch=1 → only 4 images/step → GPU starved
+            # (19GB VRAM used, 3+ s/step). batch_size=12 → loader_batch=3 →
+            # 9 synth + 3 real = 12 images/step (3× throughput, ~57GB, safe).
             if gpu_mem_gb <= 16:
-                config.batch_size = 2    # T4 (with AMP): 2 total = 1 synth + 1 real
+                config.batch_size = 4    # T4 (with AMP): 4 total = 3 synth + 1 real
             elif gpu_mem_gb < 24:
-                config.batch_size = 4    # L4/A10G: 4 total = 3 synth + 1 real
+                config.batch_size = 8    # L4/A10G: 8 total = 6 synth + 2 real
             elif gpu_mem_gb < 70:
-                config.batch_size = 4    # A100-40GB: 4 total = 3 synth + 1 real (~38GB)
+                config.batch_size = 8    # A100-40GB: 8 total = 6 synth + 2 real (~38GB)
             else:
-                config.batch_size = 6    # A100-80GB/L40S: 6 total = 4 synth + 2 real (~50GB, safe)
+                config.batch_size = 12   # A100-80GB/L40S: 12 total = 9 synth + 3 real (~57GB)
         if epochs is None:
             config.epochs = 120  # Phase 1: 120 epochs (more DA time, ~10hr on A100)
         if lr is None:
@@ -434,7 +439,8 @@ def train(
     # the GPU sits idle waiting for the CPU to load + augment images
     # (RandomScale, ColorJitter are CPU-bound). 8 workers keep the A100 busy,
     # cutting epoch time significantly. A100 has ample CPU power.
-    config.num_workers = 8
+    # Bumped to 12 for the paired DA dataset (loads synth + real per item).
+    config.num_workers = 12
 
     print(f"  GPU Memory: {gpu_mem_gb:.1f} GB")
     print(f"  Batch size: {config.batch_size}")
