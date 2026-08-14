@@ -61,17 +61,19 @@ training:
   early_stopping_metric: 'mAP@50'
 
 domain_adaptation:
+  # TEST 1 (FDA only): enable FDA, disable DCT and FSG-consistency to isolate
+  # whether FDA alone causes the mAP crash. Set disable_da_losses: false so the
+  # individual flags below are respected.
   use_fda: true
-  use_dct_align: true
-  use_fsg_consistency: true
+  use_dct_align: false
+  use_fsg_consistency: false
   use_tta: false
 
   # BINARY-SEARCH DEBUG FLAG: when true, Phase 1 runs as PURE fine-tuning with
   # ALL DA losses OFF (FDA, DCT, FSG-consistency). FSG stays ON and DehazeFormer
   # stays unfrozen. This isolates whether the mAP-0.0000 crash is caused by the
   # DA losses vs the FSG/unfrozen-DehazeFormer themselves.
-  # NOTE: set to FALSE now — the base fine-tuning is stable (mAP 0.38+), so we
-  # are re-enabling DA losses.
+  # NOTE: set to FALSE now — we are testing individual DA losses.
   disable_da_losses: false
 
   # FORCE-FRESH-PHASE1 FLAG: when true, Phase 1 IGNORES any existing Phase 1

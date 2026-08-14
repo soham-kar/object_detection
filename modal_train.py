@@ -374,11 +374,20 @@ def train(
         # unfrozen, no DA). This isolates whether the mAP-0.0000 crash is from
         # the DA losses vs the FSG/unfrozen-DehazeFormer themselves.
         disable_da = getattr(config, 'disable_da_losses', False)
-        config.use_fda = not disable_da
-        config.use_dct_align = not disable_da
-        config.use_fsg_consistency = not disable_da
         if disable_da:
+            # All DA losses OFF (pure fine-tuning)
+            config.use_fda = False
+            config.use_dct_align = False
+            config.use_fsg_consistency = False
             print("  [DEBUG] disable_da_losses=True → Phase 1 running as PURE fine-tuning (all DA losses OFF)")
+        else:
+            # DA losses ON — respect the individual flags from config so we can
+            # test one DA loss at a time (binary search). Set use_fda/use_dct_align/
+            # use_fsg_consistency in default.yaml to control which are active.
+            config.use_fda = getattr(config, 'use_fda', True)
+            config.use_dct_align = getattr(config, 'use_dct_align', True)
+            config.use_fsg_consistency = getattr(config, 'use_fsg_consistency', True)
+            print(f"  [DEBUG] DA losses: FDA={config.use_fda}, DCT={config.use_dct_align}, FSG-cons={config.use_fsg_consistency}")
         config.real_datasets = ["acdc"]  # ONLY ACDC for DA training. Zurich is for evaluation only!
         if batch_size is None:
             # 1:3 real:synth ratio — config.batch_size is TOTAL images per step.
@@ -390,14 +399,19 @@ def train(
             # At 1024×512, bs=6 uses ~38GB on the 40GB A100 (OOM at the feature
             # interpolate). On the 80GB A100, bs=12 uses ~76GB (2× memory, 2×
             # faster, safe headroom). bs=16 would exceed 80GB — too risky.
+            #
+            # ⚠️ OOM TRAP: when DA is ON, the model runs the forward pass on BOTH
+            # synth AND real images (real path for FDA/DCT/FSG-consistency). This
+            # roughly doubles memory vs DA-off (which only processes synth). So
+            # with DA on, drop to bs=6 (4 synth + 2 real) to stay within 80GB.
             if gpu_mem_gb <= 16:
                 config.batch_size = 2    # T4 (with AMP): 2 total = 1 synth + 1 real
             elif gpu_mem_gb < 24:
                 config.batch_size = 4    # L4/A10G: 4 total = 3 synth + 1 real
             elif gpu_mem_gb < 70:
-                config.batch_size = 6    # A100-40GB: 6 total = 4 synth + 2 real (~38GB)
+                config.batch_size = 4    # A100-40GB: 4 total = 3 synth + 1 real (~38GB)
             else:
-                config.batch_size = 12   # A100-80GB/L40S: 12 total = 8 synth + 4 real (~76GB)
+                config.batch_size = 6    # A100-80GB/L40S: 6 total = 4 synth + 2 real (~50GB, safe)
         if epochs is None:
             config.epochs = 120  # Phase 1: 120 epochs (more DA time, ~10hr on A100)
         if lr is None:
