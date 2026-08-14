@@ -378,14 +378,18 @@ def train(
         if batch_size is None:
             # 1:3 real:synth ratio — config.batch_size is TOTAL images per step.
             # The DataLoader uses batch_size//4 items (each item = 3 synth + 1
-            # real), so 12 total = 9 synth + 3 real. This is LOWER than the old
-            # 1:1 setup (20 imgs/step) to account for unfrozen DehazeFormer.
+            # real), so 12 total = 9 synth + 3 real.
+            #
+            # NOTE: DehazeFormer is UNFROZEN in Phase 1, so it retains activations
+            # for backward → much higher memory than Phase 0 (where it was frozen).
+            # At 1024×512, bs=12 OOMs on the 40GB A100 (verified: OOM at epoch 32).
+            # Use bs=6 (4 synth + 2 real) to stay within memory.
             if gpu_mem_gb <= 16:
-                config.batch_size = 4    # T4 (with AMP): 4 total = 3 synth + 1 real
+                config.batch_size = 2    # T4 (with AMP): 2 total = 1 synth + 1 real
             elif gpu_mem_gb < 24:
-                config.batch_size = 8    # L4/A10G: 8 total = 6 synth + 2 real
+                config.batch_size = 4    # L4/A10G: 4 total = 3 synth + 1 real
             else:
-                config.batch_size = 12   # A100-40GB/80GB: 12 total = 9 synth + 3 real
+                config.batch_size = 6    # A100-40GB/80GB: 6 total = 4 synth + 2 real
         if epochs is None:
             config.epochs = 120  # Phase 1: 120 epochs (more DA time, ~10hr on A100)
         if lr is None:

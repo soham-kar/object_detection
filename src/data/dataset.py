@@ -113,6 +113,12 @@ def build_dataloaders(config) -> Tuple[DataLoader, Optional[DataLoader]]:
         or getattr(config, 'use_dct_align', False)
         or getattr(config, 'use_fsg_consistency', False)
     )
+    # When disable_da_losses is set (binary-search debug), skip the real path
+    # entirely — we only need synthetic (labeled) data for pure fine-tuning.
+    # This also avoids the OOM from running the unfrozen DehazeFormer on the
+    # real images (which contribute no loss when DA is off).
+    if getattr(config, 'disable_da_losses', False):
+        use_da = False
 
     # ── Build synthetic (labeled) training dataset ──
     # Use multiple Cityscapes splits for training (train + val) since we
