@@ -235,6 +235,9 @@ def upload_local(local_data_path: str = "data"):
     },
     timeout=86400,  # 24 hours max (Modal's limit) — allows 30 epochs on T4
     memory=16384,   # 16 GB RAM
+    cpu=16,         # 16 cores for the 12 dataloader workers (num_workers=12).
+                    # Without this, Modal defaults to ~2-5 cores and the workers
+                    # compete for CPU → GPU starved → slow epochs.
 )
 def train(
     phase: str = "phase0",
