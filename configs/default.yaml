@@ -86,7 +86,11 @@ domain_adaptation:
   # near-identity). Resuming from a mid-Phase-1 checkpoint would contaminate
   # the test — if FDA crashes, we couldn't tell if FDA is broken or if it
   # conflicted with the already-shifted FSG weights.
-  force_fresh_phase1: true
+  #
+  # NOTE: set to FALSE now — we are RESUMING the FDA test from the existing
+  # Phase 1 checkpoint (latest.pth, epoch 1) to save credits. We don't want to
+  # discard the epoch 0-1 progress we already paid for.
+  force_fresh_phase1: false
 
   # FDA schedule (only active when use_fda: true)
   # Lowered fda_start_epoch to 2 so FDA activates immediately — we only have
