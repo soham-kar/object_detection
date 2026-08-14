@@ -424,7 +424,9 @@ def train(
             else:
                 config.batch_size = 12   # A100-80GB/L40S: 12 total = 9 synth + 3 real (~57GB)
         if epochs is None:
-            config.epochs = 120  # Phase 1: 120 epochs (more DA time, ~10hr on A100)
+            # Phase 1: 120 epochs normally, but we only have ~15 credits left.
+            # Cap at 8 epochs for the fast FDA test (~8 hrs on A100-80GB).
+            config.epochs = 8
         if lr is None:
             # Phase 1 LR lowered from 5e-4 → 2e-4. The 5x spike from Phase 0's
             # 1e-4 caused confidence collapse (mAP 0.31→0.14, predictions
