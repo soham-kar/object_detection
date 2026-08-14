@@ -300,6 +300,12 @@ def train(
     # Load config
     config = load_config(config_file)
 
+    # CRITICAL: set config.phase to the actual training phase. The trainer's
+    # _apply_phase_freeze() reads config.phase to decide whether to freeze
+    # DehazeFormer. The YAML has phase:'warmup' hardcoded, so without this
+    # override Phase 1 would freeze DehazeFormer (the opposite of what it needs).
+    config.phase = phase
+
     # Apply overrides
     if batch_size is not None:
         config.batch_size = batch_size
