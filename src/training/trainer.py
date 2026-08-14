@@ -474,3 +474,9 @@ class WRDNetTrainer:
                     m.reset_running_stats()
                     bn_count += 1
             print(f"Reset {bn_count} BatchNorm running stats (new batch size re-calibration)")
+            # reset_bn=True is ONLY used for the fresh Phase 0 → Phase 1
+            # transition (force_fresh_phase1). The Phase 0 checkpoint's epoch
+            # (e.g., 31) must NOT carry over — a fresh Phase 1 run starts at
+            # epoch 0. Otherwise the training loop starts at epoch 32.
+            self.current_epoch = 0
+            self.best_metric = 0.0
