@@ -61,24 +61,26 @@ training:
   early_stopping_metric: 'mAP@50'
 
 domain_adaptation:
-  use_fda: false
-  use_dct_align: false
-  use_fsg_consistency: false
+  use_fda: true
+  use_dct_align: true
+  use_fsg_consistency: true
   use_tta: false
 
   # BINARY-SEARCH DEBUG FLAG: when true, Phase 1 runs as PURE fine-tuning with
   # ALL DA losses OFF (FDA, DCT, FSG-consistency). FSG stays ON and DehazeFormer
   # stays unfrozen. This isolates whether the mAP-0.0000 crash is caused by the
   # DA losses vs the FSG/unfrozen-DehazeFormer themselves.
-  # NOTE: set to TRUE for the current binary-search debugging.
-  disable_da_losses: true
+  # NOTE: set to FALSE now — the base fine-tuning is stable (mAP 0.38+), so we
+  # are re-enabling DA losses.
+  disable_da_losses: false
 
   # FORCE-FRESH-PHASE1 FLAG: when true, Phase 1 IGNORES any existing Phase 1
   # checkpoints and always loads fresh from Phase 0 + resets the FSG gate to
   # near-identity. This prevents the footgun where stale Phase 1 checkpoints
   # (with random FSG weights) are resumed instead of applying the FSG fix.
-  # NOTE: set to TRUE for the current binary-search debugging.
-  force_fresh_phase1: true
+  # NOTE: set to FALSE now — we want to RESUME from the current Phase 1
+  # checkpoint (epoch 4, mAP 0.3787), not reload Phase 0.
+  force_fresh_phase1: false
 
   # FDA schedule (only active when use_fda: true)
   fda_start_epoch: 30
