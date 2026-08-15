@@ -195,16 +195,23 @@ class WRDNet(nn.Module):
         outputs = {}
 
         # ── Synthetic path ──
+        # 'image' is the ORIGINAL synthetic foggy image (labels match it).
+        # 'fda_image' (if present) is the FDA-transformed version — used ONLY
+        # for the restoration branch (DehazeFormer) so domain adaptation happens
+        # without corrupting the detection labels. YOLO detection MUST use the
+        # original 'image' so bbox labels stay valid.
         synth_img = synth_input['image']  # [B, 3, 640, 640] original foggy image
+        # Restoration input: FDA-transformed if available, else original.
+        rest_img = synth_input.get('fda_image', synth_img)
 
-        # DehazeFormer (restoration branch)
-        restored_s = self.dehazeformer(synth_img)
+        # DehazeFormer (restoration branch) — uses FDA-transformed image for DA
+        restored_s = self.dehazeformer(rest_img)
         outputs['restored_s'] = restored_s
 
         # Depth
         depth_s = None
         if self.depth_decoder is not None:
-            bottleneck_s = self.dehazeformer.get_bottleneck(synth_img)  # [B, 96, 80, 80]
+            bottleneck_s = self.dehazeformer.get_bottleneck(rest_img)  # [B, 96, 80, 80]
             _, depth_s = self.depth_decoder(bottleneck_s)
             # Guard: if depth decoder diverged to NaN, fall back to a constant
             # (zeros) so it doesn't corrupt FSG → YOLO → detection loss.
@@ -219,8 +226,10 @@ class WRDNet(nn.Module):
         # for feature fusion via FSG.
         orig_features_s = self.yolo.get_backbone_features(synth_img)
 
-        # DehazeFormer encoder features (already projected: P3/P4/P5)
-        rest_features_s = self.dehazeformer.get_encoder_features(synth_img)
+        # DehazeFormer encoder features (already projected: P3/P4/P5).
+        # Use the FDA-transformed image (rest_img) so the restoration features
+        # are domain-adapted, while YOLO detection stays on the original image.
+        rest_features_s = self.dehazeformer.get_encoder_features(rest_img)
 
         # Upsample to match YOLO spatial scales
         rest_features_s_up = {}

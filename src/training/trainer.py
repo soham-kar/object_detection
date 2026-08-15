@@ -255,13 +255,20 @@ class WRDNetTrainer:
                 real_batch = None
                 loss_batch = synth_batch
 
-            # Apply FDA (input-level domain adaptation) if enabled
+            # Apply FDA (input-level domain adaptation) if enabled.
+            # CRITICAL FIX: store the FDA-transformed image in a SEPARATE key
+            # ('fda_image') instead of replacing 'image'. The original 'image'
+            # must stay intact for YOLO detection — the detection labels (bboxes)
+            # are for the ORIGINAL synthetic image. If FDA replaces 'image', the
+            # labels no longer match the altered image → detection head confused
+            # → mAP oscillates (0.40 → 0.31). FDA should only feed the
+            # restoration branch (DehazeFormer), not the detection branch.
             if self.use_fda and self.fda_transform is not None:
                 if self.current_epoch >= self.fda_start_epoch and real_batch is not None:
                     beta = self._get_fda_beta(self.current_epoch)
                     if beta > 0:
                         self.fda_transform.beta = beta
-                        synth_batch['image'] = self.fda_transform(
+                        synth_batch['fda_image'] = self.fda_transform(
                             synth_batch['image'], real_batch['image']
                         )
 
