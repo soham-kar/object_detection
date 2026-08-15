@@ -41,8 +41,11 @@ training:
   lambda_rest: 0.1      # Reduced from 0.5
   lambda_depth: 0.05    # Reduced from 0.1
   lambda_entropy: 0.01
-  lambda_domain: 0.01   # Reduced from 0.02 → 0.01 (gentle DA, prevents collapse)
-  lambda_fsg: 0.01
+  lambda_domain: 0.005  # Reduced from 0.01 → 0.005 (all-3 test: DCT MMD must not
+                        # overpower detection. The "overpowering effect" is the
+                        # main risk — DCT pulls features for distribution matching
+                        # while YOLO wants localization. Lower weight = gentler.)
+  lambda_fsg: 0.005     # Reduced from 0.01 → 0.005 (FSG-consistency, same reason)
 
   # Domain warmup — linearly ramp lambda_domain from 0 to its value over first N epochs.
   # Extended 10 → 25: gives the detector time to fully adapt to the FSG before
@@ -61,12 +64,13 @@ training:
   early_stopping_metric: 'mAP@50'
 
 domain_adaptation:
-  # TEST 4 (FDA + FSG-consistency): enable FDA + FSG-consistency, drop DCT.
-  # FDA is validated (mAP 0.4202). FSG-consistency is a gentle pairwise MSE on
-  # alpha maps (low risk), while DCT's MMD on high-dim features is unstable.
-  # Dropping DCT also lightens the real path → can use bs=8 instead of 6.
+  # TEST 5 (ALL 3 — paper's core hypothesis): FDA + DCT + FSG-consistency.
+  # The three modules attack the domain gap at three levels: FDA (input),
+  # DCT (feature), FSG-consistency (gate). This is the paper's novelty.
+  # Risk: DA losses can overpower detection → lowered lambda_domain and
+  # lambda_fsg to 0.005 so they're gentle. DCT real path is heavy → bs=6.
   use_fda: true
-  use_dct_align: false
+  use_dct_align: true
   use_fsg_consistency: true
   use_tta: false
 
