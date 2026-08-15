@@ -234,7 +234,9 @@ def upload_local(local_data_path: str = "data"):
         "/checkpoints": CHECKPOINT_VOLUME,
     },
     timeout=86400,  # 24 hours max (Modal's limit) — allows 30 epochs on T4
-    memory=16384,   # 16 GB RAM
+    memory=32768,   # 32 GB RAM — the paired DA dataset (synth + real + FDA
+                    # fda_image) uses ~22.7GB, exceeding the old 16GB request.
+                    # 32GB gives headroom so Modal doesn't throttle/OOM.
     cpu=16,         # 16 cores for the 12 dataloader workers (num_workers=12).
                     # Without this, Modal defaults to ~2-5 cores and the workers
                     # compete for CPU → GPU starved → slow epochs.
