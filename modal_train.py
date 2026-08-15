@@ -413,8 +413,9 @@ def train(
             #
             # ⚠️ OOM TRAP: when DCT or FSG-consistency is ON, the real path runs
             # (full DehazeFormer + YOLO on real images) → memory roughly doubles.
-            # FDA-only skips the real path (my fix), so it can use bs=12. But
-            # DCT/FSG need a smaller batch to stay within 80GB.
+            # FDA-only skips the real path (my fix), so it can use bs=12.
+            # DCT is heavier (MMD on high-dim features) → bs=6. FSG-consistency
+            # is lighter (pairwise MSE on alpha maps) → bs=8.
             real_path_on = config.use_dct_align or config.use_fsg_consistency
             if gpu_mem_gb <= 16:
                 config.batch_size = 2    # T4 (with AMP): 2 total = 1 synth + 1 real
@@ -424,10 +425,12 @@ def train(
                 config.batch_size = 4    # A100-40GB: 4 total = 3 synth + 1 real (~38GB)
             else:
                 # A100-80GB/L40S
-                if real_path_on:
-                    config.batch_size = 6    # 6 total = 4 synth + 2 real (~50GB, safe with real path)
+                if config.use_dct_align:
+                    config.batch_size = 6    # DCT real path is heavy → 6 total = 4 synth + 2 real
+                elif config.use_fsg_consistency:
+                    config.batch_size = 8    # FSG-cons real path is lighter → 8 total = 6 synth + 2 real
                 else:
-                    config.batch_size = 12   # 12 total = 9 synth + 3 real (~57GB, FDA-only skips real path)
+                    config.batch_size = 12   # FDA-only skips real path → 12 total = 9 synth + 3 real
         if epochs is None:
             # Phase 1: 120 epochs normally, but we only have ~15 credits left.
             # Cap at 8 epochs for the fast FDA test (~8 hrs on A100-80GB).

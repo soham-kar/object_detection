@@ -61,14 +61,12 @@ training:
   early_stopping_metric: 'mAP@50'
 
 domain_adaptation:
-  # TEST 3 (ALL DA): enable FDA + DCT + FSG-consistency together.
-  # FDA is validated (mAP 0.4112). Testing all 3 is the direct path to the
-  # final model — if it works, we're done. If it crashes, we know it's DCT or
-  # FSG (since FDA is proven), a smaller search space. Saves credits (one run
-  # instead of two). NOTE: DCT/FSG turn on the real path → memory doubles, so
-  # batch size drops to 6 (handled in modal_train.py).
+  # TEST 4 (FDA + FSG-consistency): enable FDA + FSG-consistency, drop DCT.
+  # FDA is validated (mAP 0.4202). FSG-consistency is a gentle pairwise MSE on
+  # alpha maps (low risk), while DCT's MMD on high-dim features is unstable.
+  # Dropping DCT also lightens the real path → can use bs=8 instead of 6.
   use_fda: true
-  use_dct_align: true
+  use_dct_align: false
   use_fsg_consistency: true
   use_tta: false
 
