@@ -61,9 +61,11 @@ training:
   early_stopping_metric: 'mAP@50'
 
 domain_adaptation:
-  # TEST 2 (DCT + FSG-consistency): enable DCT and FSG-consistency, keep FDA on.
-  # FDA is validated (mAP 0.4112). Now test whether DCT and FSG-consistency
-  # add value or crash. NOTE: these turn on the real path → memory doubles, so
+  # TEST 3 (ALL DA): enable FDA + DCT + FSG-consistency together.
+  # FDA is validated (mAP 0.4112). Testing all 3 is the direct path to the
+  # final model — if it works, we're done. If it crashes, we know it's DCT or
+  # FSG (since FDA is proven), a smaller search space. Saves credits (one run
+  # instead of two). NOTE: DCT/FSG turn on the real path → memory doubles, so
   # batch size drops to 6 (handled in modal_train.py).
   use_fda: true
   use_dct_align: true
@@ -88,10 +90,10 @@ domain_adaptation:
   # the test — if FDA crashes, we couldn't tell if FDA is broken or if it
   # conflicted with the already-shifted FSG weights.
   #
-  # NOTE: set to FALSE now — we are RESUMING the FDA test from the existing
-  # Phase 1 checkpoint (latest.pth, epoch 1) to save credits. We don't want to
-  # discard the epoch 0-1 progress we already paid for.
-  force_fresh_phase1: false
+  # NOTE: set to TRUE now — testing all 3 DA losses (FDA+DCT+FSG). Every DA
+  # test must start from the SAME stable baseline (Phase 0 best.pth, mAP 0.39,
+  # FSG near-identity) for a conclusive result.
+  force_fresh_phase1: true
 
   # FDA schedule (only active when use_fda: true)
   # Lowered fda_start_epoch to 2 so FDA activates immediately — we only have
