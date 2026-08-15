@@ -411,23 +411,23 @@ def train(
             # interpolate). On the 80GB A100, bs=12 uses ~76GB (2× memory, 2×
             # faster, safe headroom). bs=16 would exceed 80GB — too risky.
             #
-            # ⚠️ OOM TRAP: when DA is ON, the model runs the forward pass on BOTH
-            # synth AND real images (real path for FDA/DCT/FSG-consistency). This
-            # roughly doubles memory vs DA-off (which only processes synth).
-            #
-            # ⚠️ THROUGHPUT: the paired collate divides batch_size by 4
-            # (loader_batch = batch_size//4, each item = 3 synth + 1 real).
-            # So batch_size=6 → loader_batch=1 → only 4 images/step → GPU starved
-            # (19GB VRAM used, 3+ s/step). batch_size=12 → loader_batch=3 →
-            # 9 synth + 3 real = 12 images/step (3× throughput, ~57GB, safe).
+            # ⚠️ OOM TRAP: when DCT or FSG-consistency is ON, the real path runs
+            # (full DehazeFormer + YOLO on real images) → memory roughly doubles.
+            # FDA-only skips the real path (my fix), so it can use bs=12. But
+            # DCT/FSG need a smaller batch to stay within 80GB.
+            real_path_on = config.use_dct_align or config.use_fsg_consistency
             if gpu_mem_gb <= 16:
-                config.batch_size = 4    # T4 (with AMP): 4 total = 3 synth + 1 real
+                config.batch_size = 2    # T4 (with AMP): 2 total = 1 synth + 1 real
             elif gpu_mem_gb < 24:
-                config.batch_size = 8    # L4/A10G: 8 total = 6 synth + 2 real
+                config.batch_size = 4    # L4/A10G: 4 total = 3 synth + 1 real
             elif gpu_mem_gb < 70:
-                config.batch_size = 8    # A100-40GB: 8 total = 6 synth + 2 real (~38GB)
+                config.batch_size = 4    # A100-40GB: 4 total = 3 synth + 1 real (~38GB)
             else:
-                config.batch_size = 12   # A100-80GB/L40S: 12 total = 9 synth + 3 real (~57GB)
+                # A100-80GB/L40S
+                if real_path_on:
+                    config.batch_size = 6    # 6 total = 4 synth + 2 real (~50GB, safe with real path)
+                else:
+                    config.batch_size = 12   # 12 total = 9 synth + 3 real (~57GB, FDA-only skips real path)
         if epochs is None:
             # Phase 1: 120 epochs normally, but we only have ~15 credits left.
             # Cap at 8 epochs for the fast FDA test (~8 hrs on A100-80GB).

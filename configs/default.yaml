@@ -61,12 +61,13 @@ training:
   early_stopping_metric: 'mAP@50'
 
 domain_adaptation:
-  # TEST 1 (FDA only): enable FDA, disable DCT and FSG-consistency to isolate
-  # whether FDA alone causes the mAP crash. Set disable_da_losses: false so the
-  # individual flags below are respected.
+  # TEST 2 (DCT + FSG-consistency): enable DCT and FSG-consistency, keep FDA on.
+  # FDA is validated (mAP 0.4112). Now test whether DCT and FSG-consistency
+  # add value or crash. NOTE: these turn on the real path → memory doubles, so
+  # batch size drops to 6 (handled in modal_train.py).
   use_fda: true
-  use_dct_align: false
-  use_fsg_consistency: false
+  use_dct_align: true
+  use_fsg_consistency: true
   use_tta: false
 
   # BINARY-SEARCH DEBUG FLAG: when true, Phase 1 runs as PURE fine-tuning with
