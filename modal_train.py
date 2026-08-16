@@ -679,12 +679,24 @@ def evaluate(
     print(f"  mAP@50:95: {det_metrics.get('mAP@50:95', 0.0):.4f}")
 
     # Restoration metrics (only for synthetic data with clear GT)
+    # NOTE: the cityscapes detection eval uses load_clear=False (no clear GT),
+    # so restoration metrics are skipped there. To compute PSNR/SSIM, run a
+    # separate eval with load_clear=True.
     if dataset == "cityscapes":
-        print("\nComputing restoration metrics...")
-        rest_metrics = evaluator.evaluate_restoration(test_loader, has_gt=True)
-        print(f"\nRestoration Results:")
-        print(f"  PSNR: {rest_metrics.get('PSNR', 0.0):.2f} dB")
-        print(f"  SSIM: {rest_metrics.get('SSIM', 0.0):.4f}")
+        # Check if the loader provides clear_gt (it doesn't for detection eval)
+        try:
+            sample_batch = next(iter(test_loader))
+            has_clear = sample_batch.get('clear_gt') is not None
+        except Exception:
+            has_clear = False
+        if has_clear:
+            print("\nComputing restoration metrics...")
+            rest_metrics = evaluator.evaluate_restoration(test_loader, has_gt=True)
+            print(f"\nRestoration Results:")
+            print(f"  PSNR: {rest_metrics.get('PSNR', 0.0):.2f} dB")
+            print(f"  SSIM: {rest_metrics.get('SSIM', 0.0):.4f}")
+        else:
+            print("\nSkipping restoration metrics (no clear GT in detection eval loader).")
 
     # Speed
     print("\nMeasuring inference speed...")
