@@ -583,7 +583,7 @@ def train(
 
 @app.function(
     image=image,
-    gpu="A10G",  # Evaluation doesn't need the H100 — use a cheaper GPU
+    gpu="T4",  # Evaluation doesn't need the H100/A10G — use the cheapest GPU
     volumes={
         "/data": DATA_VOLUME,
         "/checkpoints": CHECKPOINT_VOLUME,
