@@ -259,3 +259,47 @@ def build_test_loader(config) -> DataLoader:
     print(f"  Test (Foggy Driving): {len(test_dataset)} samples, {len(test_loader)} batches")
 
     return test_loader
+
+
+def build_cityscapes_val_loader(config) -> DataLoader:
+    """
+    Build a Foggy Cityscapes VALIDATION loader for the standard benchmark.
+
+    Uses split='val' and fog_density='0.02' (the standard heavy-fog benchmark
+    that top IEEE journals expect). 500 scenes at beta 0.02.
+
+    IMPORTANT: uses get_val_transforms (NO training augmentations — no
+    RandomScale, no ColorJitter) so the evaluation is clean and reproducible.
+
+    Args:
+        config: Config object
+    Returns:
+        val_loader for Foggy Cityscapes val (500 images at beta 0.02)
+    """
+    data_root = getattr(config, 'data_root', 'data')
+    batch_size = getattr(config, 'batch_size', 4)
+    num_workers = getattr(config, 'num_workers', 4)
+    input_size = getattr(config, 'input_size', 640)
+
+    val_dataset = FoggyCityscapesDataset(
+        root=os.path.join(data_root, 'cityscapes'),
+        split='val',
+        fog_density='0.02',  # standard heavy-fog benchmark
+        input_size=input_size,
+        load_clear=False,    # no clear GT needed for detection eval
+        load_depth=False,    # no depth needed for detection eval
+        config=config,
+    )
+
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=True,
+        collate_fn=wrdnet_collate_fn,
+    )
+
+    print(f"  Test (Foggy Cityscapes val, beta 0.02): {len(val_dataset)} samples, {len(val_loader)} batches")
+
+    return val_loader

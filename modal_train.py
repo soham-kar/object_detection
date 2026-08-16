@@ -583,7 +583,7 @@ def train(
 
 @app.function(
     image=image,
-    gpu=GPU_TYPE,
+    gpu="A10G",  # Evaluation doesn't need the H100 — use a cheaper GPU
     volumes={
         "/data": DATA_VOLUME,
         "/checkpoints": CHECKPOINT_VOLUME,
@@ -601,7 +601,9 @@ def evaluate(
 
     Args:
         phase: which phase checkpoints to use ('phase0' or 'phase1')
-        dataset: 'driving' (Foggy Driving) or 'acdc' (ACDC val)
+        dataset: 'driving' (Foggy Driving), 'acdc' (ACDC val), or
+                 'cityscapes' (Foggy Cityscapes val, beta 0.02 — the standard
+                 benchmark for top IEEE journals)
         visualize: generate alpha map visualizations
     """
     import sys
@@ -624,7 +626,7 @@ def evaluate(
 
     from src.utils.config import load_config
     from src.models.wrnet import WRDNet
-    from src.data.dataset import build_test_loader, build_dataloaders
+    from src.data.dataset import build_test_loader, build_dataloaders, build_cityscapes_val_loader
     from src.evaluation.evaluator import WRDNetEvaluator
 
     config = load_config("configs/default.yaml")
@@ -661,6 +663,10 @@ def evaluate(
         config.batch_size = 4
         _, val_loader = build_dataloaders(config)
         test_loader = val_loader
+    elif dataset == "cityscapes":
+        print("\nEvaluating on Foggy Cityscapes val (500 images, beta 0.02)...")
+        config.batch_size = 4
+        test_loader = build_cityscapes_val_loader(config)
     else:
         print(f"Unknown dataset: {dataset}")
         return
