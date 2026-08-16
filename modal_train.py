@@ -645,7 +645,10 @@ def evaluate(
 
     if os.path.exists(ckpt_path):
         ckpt = torch.load(ckpt_path, map_location=device)
-        model.load_state_dict(ckpt["model_state_dict"])
+        # strict=False: the Phase 0 checkpoint has NO depth_decoder (depth was
+        # disabled in Phase 0), but the current config creates one. Ignore the
+        # missing depth keys so the Phase 0 model loads cleanly for eval.
+        model.load_state_dict(ckpt["model_state_dict"], strict=False)
         print(f"Loaded checkpoint: {ckpt_path}")
     else:
         print("ERROR: No checkpoint found!")
