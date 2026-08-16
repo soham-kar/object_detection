@@ -41,8 +41,8 @@ import click
 app = modal.App("wrdnet-training")
 
 # GPU selection — change this to match your Modal plan
-# Free tier: "T4" | Paid: "L4", "A10G", "A100-40GB", "A100-80GB", "L40S"
-GPU_TYPE = "A100-80GB"  # Phase 1 on A100-80GB (2× memory → bs=12, 2× faster, no OOM)
+# Free tier: "T4" | Paid: "L4", "A10G", "A100-40GB", "A100-80GB", "L40S", "H100", "H200"
+GPU_TYPE = "H200"  # H200 (141GB, ~990 TFLOPS): 2-3x faster + larger batch (bs=10-12) than A100-80GB
 
 # Persistent volume for data and checkpoints
 DATA_VOLUME = modal.Volume.from_name("wrdnet-data", create_if_missing=True)
@@ -416,6 +416,7 @@ def train(
             # FDA-only skips the real path (my fix), so it can use bs=12.
             # DCT is heavier (MMD on high-dim features) → bs=6. FSG-consistency
             # is lighter (pairwise MSE on alpha maps) → bs=8.
+            # H200 (141GB) has ~1.75× the memory of A100-80GB → scale batch up.
             real_path_on = config.use_dct_align or config.use_fsg_consistency
             if gpu_mem_gb <= 16:
                 config.batch_size = 2    # T4 (with AMP): 2 total = 1 synth + 1 real
@@ -423,14 +424,22 @@ def train(
                 config.batch_size = 4    # L4/A10G: 4 total = 3 synth + 1 real
             elif gpu_mem_gb < 70:
                 config.batch_size = 4    # A100-40GB: 4 total = 3 synth + 1 real (~38GB)
-            else:
-                # A100-80GB/L40S
+            elif gpu_mem_gb < 100:
+                # A100-80GB / H100-80GB
                 if config.use_dct_align:
                     config.batch_size = 6    # DCT real path is heavy → 6 total = 4 synth + 2 real
                 elif config.use_fsg_consistency:
                     config.batch_size = 8    # FSG-cons real path is lighter → 8 total = 6 synth + 2 real
                 else:
                     config.batch_size = 12   # FDA-only skips real path → 12 total = 9 synth + 3 real
+            else:
+                # H200 (141GB) / B200 / B300 — ~1.75× memory of A100-80GB
+                if config.use_dct_align:
+                    config.batch_size = 10   # DCT real path → 10 total = 7 synth + 3 real (~83GB)
+                elif config.use_fsg_consistency:
+                    config.batch_size = 12   # FSG-cons real path → 12 total = 9 synth + 3 real (~100GB)
+                else:
+                    config.batch_size = 16   # FDA-only skips real path → 16 total = 12 synth + 4 real (~133GB)
         if epochs is None:
             # Phase 1: 120 epochs normally, but we only have ~15 credits left.
             # Cap at 8 epochs for the fast FDA test (~8 hrs on A100-80GB).
