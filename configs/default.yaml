@@ -95,10 +95,10 @@ domain_adaptation:
   # the test — if FDA crashes, we couldn't tell if FDA is broken or if it
   # conflicted with the already-shifted FSG weights.
   #
-  # NOTE: set to TRUE now — testing all 3 DA losses (FDA+DCT+FSG). Every DA
-  # test must start from the SAME stable baseline (Phase 0 best.pth, mAP 0.39,
-  # FSG near-identity) for a conclusive result.
-  force_fresh_phase1: true
+  # NOTE: set to FALSE now — RESUMING the all-3 test from the epoch-2 checkpoint
+  # (mAP 0.3550). This is the same run (started from Phase 0), just continuing.
+  # force_fresh_phase1=true would discard the 2 epochs of progress.
+  force_fresh_phase1: false
 
   # FDA schedule (only active when use_fda: true)
   # Lowered fda_start_epoch to 2 so FDA activates immediately — we only have
