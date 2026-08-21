@@ -261,20 +261,23 @@ def build_test_loader(config) -> DataLoader:
     return test_loader
 
 
-def build_cityscapes_val_loader(config) -> DataLoader:
+def build_cityscapes_val_loader(config, fog_density: str = '0.02') -> DataLoader:
     """
     Build a Foggy Cityscapes VALIDATION loader for the standard benchmark.
 
-    Uses split='val' and fog_density='0.02' (the standard heavy-fog benchmark
-    that top IEEE journals expect). 500 scenes at beta 0.02.
+    Uses split='val' at the given fog_density. The default '0.02' is the
+    standard heavy-fog benchmark that top IEEE journals expect (500 scenes).
+    Evaluating at multiple densities (0.005, 0.01, 0.02) demonstrates weather
+    resilience across the fog continuum.
 
     IMPORTANT: uses get_val_transforms (NO training augmentations — no
     RandomScale, no ColorJitter) so the evaluation is clean and reproducible.
 
     Args:
         config: Config object
+        fog_density: scattering coefficient ('0.005', '0.01', or '0.02')
     Returns:
-        val_loader for Foggy Cityscapes val (500 images at beta 0.02)
+        val_loader for Foggy Cityscapes val at the given fog density
     """
     data_root = getattr(config, 'data_root', 'data')
     batch_size = getattr(config, 'batch_size', 4)
@@ -284,7 +287,7 @@ def build_cityscapes_val_loader(config) -> DataLoader:
     val_dataset = FoggyCityscapesDataset(
         root=os.path.join(data_root, 'cityscapes'),
         split='val',
-        fog_density='0.02',  # standard heavy-fog benchmark
+        fog_density=fog_density,
         input_size=input_size,
         load_clear=False,    # no clear GT needed for detection eval
         load_depth=False,    # no depth needed for detection eval

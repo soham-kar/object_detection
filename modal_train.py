@@ -596,6 +596,7 @@ def evaluate(
     dataset: str = "driving",
     visualize: bool = False,
     tta: bool = False,
+    fog_density: str = "0.02",
 ):
     """
     Evaluate trained WRDNet model.
@@ -603,11 +604,12 @@ def evaluate(
     Args:
         phase: which phase checkpoints to use ('phase0' or 'phase1')
         dataset: 'driving' (Foggy Driving), 'acdc' (ACDC val), or
-                 'cityscapes' (Foggy Cityscapes val, beta 0.02 — the standard
-                 benchmark for top IEEE journals)
+                 'cityscapes' (Foggy Cityscapes val — the standard benchmark)
         visualize: generate alpha map visualizations
         tta: if True, apply test-time augmentation (horizontal flip) — a
              standard, honest evaluation technique that typically adds +1-3% mAP
+        fog_density: scattering coefficient for cityscapes eval
+                     ('0.005', '0.01', or '0.02'; default '0.02' = heavy fog)
     """
     import sys
     import os
@@ -670,9 +672,9 @@ def evaluate(
         _, val_loader = build_dataloaders(config)
         test_loader = val_loader
     elif dataset == "cityscapes":
-        print("\nEvaluating on Foggy Cityscapes val (500 images, beta 0.02)...")
+        print(f"\nEvaluating on Foggy Cityscapes val (500 images, beta {fog_density})...")
         config.batch_size = 4
-        test_loader = build_cityscapes_val_loader(config)
+        test_loader = build_cityscapes_val_loader(config, fog_density=fog_density)
     else:
         print(f"Unknown dataset: {dataset}")
         return
@@ -833,6 +835,7 @@ def eval(
     dataset: str = "driving",
     visualize: bool = False,
     tta: bool = False,
+    fog_density: str = "0.02",
 ):
     """Evaluate trained model on Modal GPU.
 
@@ -840,8 +843,11 @@ def eval(
         modal run modal_train.py::eval --phase phase0 --dataset driving
         modal run modal_train.py::eval --phase phase1 --dataset acdc --visualize
         modal run modal_train.py::eval --phase phase1 --dataset cityscapes --tta
+        modal run modal_train.py::eval --phase phase1 --dataset cityscapes --fog_density 0.005
+        modal run modal_train.py::eval --phase phase1 --dataset cityscapes --fog_density 0.01
     """
-    evaluate.remote(phase=phase, dataset=dataset, visualize=visualize, tta=tta)
+    evaluate.remote(phase=phase, dataset=dataset, visualize=visualize, tta=tta,
+                    fog_density=fog_density)
 
 
 @app.local_entrypoint()
