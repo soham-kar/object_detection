@@ -747,6 +747,7 @@ def plot_alpha_depth(phase: str = "phase1"):
     """
     import sys
     import os
+    import subprocess
     import torch
 
     REPO = "/tmp/object_detection"
@@ -783,7 +784,6 @@ def plot_alpha_depth(phase: str = "phase1"):
     _, val_loader = build_dataloaders(config)
 
     # Run the plot script
-    import subprocess
     result = subprocess.run([
         sys.executable, "scripts/plot_alpha_vs_depth.py",
         "--config", "configs/default.yaml",
