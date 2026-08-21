@@ -28,6 +28,62 @@ class WRDNetEvaluator:
         self.model.to(self.device)
         self.model.eval()
 
+    def _decode_predictions(self, raw_preds, conf_thres: float = 0.01):
+        """
+        Decode raw YOLO predictions into normalized [x1,y1,x2,y2] boxes.
+
+        Args:
+            raw_preds: [B, 4+nc, N] raw predictions (cx, cy, w, h in pixels + class logits)
+            conf_thres: confidence threshold
+        Returns:
+            (boxes, confs, cls_ids) for the FIRST image in the batch, or
+            (None, None, None) if no detections pass the threshold.
+        """
+        # YOLO input size — (H, W) tuple for 2:1 aspect ratio.
+        input_h, input_w = 512, 1024  # YOLO input size (config.input_size_detect)
+
+        pred = raw_preds[0]  # [84, N]
+        # Extract box coords (cx, cy, w, h) in PIXEL coordinates
+        box_preds = pred[:4, :].T  # [N, 4] cx, cy, w, h (pixels)
+        cls_preds = pred[4:, :].T  # [N, 80] class scores
+
+        # We only care about our 8 classes (indices 0-7)
+        cls_preds_8 = cls_preds[:, :8]  # [N, 8]
+
+        # Use top-1 class and confidence from our 8 classes only
+        max_conf, max_cls = cls_preds_8.max(dim=1)  # [N]
+
+        # Filter by confidence
+        mask = max_conf > conf_thres
+        if mask.sum() == 0:
+            return None, None, None
+
+        boxes = box_preds[mask]  # [N, 4] cx, cy, w, h (pixels)
+        confs = max_conf[mask]   # [N]
+        cls_ids = max_cls[mask]  # [N]
+
+        # Normalize to [0,1]: x by width, y by height (2:1 aspect ratio)
+        boxes_norm = boxes.clone()
+        boxes_norm[:, 0] = boxes[:, 0] / input_w  # cx / width
+        boxes_norm[:, 1] = boxes[:, 1] / input_h  # cy / height
+        boxes_norm[:, 2] = boxes[:, 2] / input_w  # w / width
+        boxes_norm[:, 3] = boxes[:, 3] / input_h  # h / height
+
+        # Convert cx,cy,w,h to x1,y1,x2,y2 (normalized)
+        x1 = boxes_norm[:, 0] - boxes_norm[:, 2] / 2
+        y1 = boxes_norm[:, 1] - boxes_norm[:, 3] / 2
+        x2 = boxes_norm[:, 0] + boxes_norm[:, 2] / 2
+        y2 = boxes_norm[:, 1] + boxes_norm[:, 3] / 2
+
+        # Clamp to [0, 1]
+        x1 = x1.clamp(0, 1)
+        y1 = y1.clamp(0, 1)
+        x2 = x2.clamp(0, 1)
+        y2 = y2.clamp(0, 1)
+
+        boxes = torch.stack([x1, y1, x2, y2], dim=1)  # [N, 4]
+        return boxes, confs, cls_ids
+
     def evaluate_detection(self, dataloader, conf_thres: float = 0.01,
                            iou_thres: float = 0.45, use_tta: bool = False) -> Dict[str, float]:
         """
@@ -58,117 +114,83 @@ class WRDNetEvaluator:
 
                 # Forward pass (with optional TTA)
                 if use_tta:
-                    # Run original + horizontal flip, merge predictions.
-                    # NOTE: the flipped image's box cx coordinates are mirrored,
-                    # so we must un-flip them (cx' = W - cx) before averaging.
+                    # Run original + horizontal flip, decode each to normalized
+                    # boxes, un-flip the flipped boxes, then merge via NMS.
+                    # (Averaging raw logits is WRONG — boxes must be decoded and
+                    # merged, not averaged as raw tensors.)
                     outputs = self.model(images)
                     det_output = outputs['detections']
                     raw_preds = det_output[0] if isinstance(det_output, (tuple, list)) else det_output
 
-                    # Horizontal flip
                     flipped = torch.flip(images, dims=[3])
                     outputs_f = self.model(flipped)
                     det_output_f = outputs_f['detections']
                     raw_preds_f = det_output_f[0] if isinstance(det_output_f, (tuple, list)) else det_output_f
 
-                    # Un-flip the flipped predictions' box cx (index 0) before averaging.
-                    # raw_preds_f shape: [B, 84, N]; box coords are cx,cy,w,h in pixels.
-                    # After horizontal flip, cx_f = W - cx. So cx = W - cx_f.
-                    W = images.shape[3]
-                    raw_preds_f = raw_preds_f.clone()
-                    raw_preds_f[:, 0, :] = W - raw_preds_f[:, 0, :]
+                    # Decode both passes into normalized [x1,y1,x2,y2] boxes
+                    boxes_a, confs_a, cls_a = self._decode_predictions(raw_preds, conf_thres)
+                    boxes_b, confs_b, cls_b = self._decode_predictions(raw_preds_f, conf_thres)
 
-                    # Average the two predictions (raw logits)
-                    raw_preds = (raw_preds + raw_preds_f) / 2.0
+                    # Un-flip the flipped boxes (x1' = 1 - x2, x2' = 1 - x1)
+                    if boxes_b is not None and len(boxes_b) > 0:
+                        boxes_b = boxes_b.clone()
+                        x1_b, x2_b = boxes_b[:, 0].clone(), boxes_b[:, 2].clone()
+                        boxes_b[:, 0] = 1.0 - x2_b
+                        boxes_b[:, 2] = 1.0 - x1_b
+
+                    # Merge the two sets
+                    if boxes_a is not None and boxes_b is not None:
+                        boxes = torch.cat([boxes_a, boxes_b], dim=0)
+                        confs = torch.cat([confs_a, confs_b], dim=0)
+                        cls_ids = torch.cat([cls_a, cls_b], dim=0)
+                    elif boxes_a is not None:
+                        boxes, confs, cls_ids = boxes_a, confs_a, cls_a
+                    elif boxes_b is not None:
+                        boxes, confs, cls_ids = boxes_b, confs_b, cls_b
+                    else:
+                        img_idx += 1
+                        continue
                 else:
                     outputs = self.model(images)
                     det_output = outputs['detections']
                     raw_preds = det_output[0] if isinstance(det_output, (tuple, list)) else det_output
-
-                # YOLO Detect head returns raw predictions in eval mode:
-                # [B, 4+nc, num_anchors] where first 4 are (cx, cy, w, h) in pixel coords
-                # relative to input size (640), NOT normalized [0,1]
-                # We need to normalize to [0,1] for IoU computation with GT (which is normalized)
-
-                B = raw_preds.shape[0]
-                # YOLO input size — (H, W) tuple for 2:1 aspect ratio.
-                # Box coords are in pixel space; normalize x by width, y by height.
-                input_h, input_w = 512, 1024  # YOLO input size (config.input_size_detect)
-
-                for b in range(B):
-                    pred = raw_preds[b]  # [84, 8400]
-                    # Extract box coords (cx, cy, w, h) in PIXEL coordinates
-                    box_preds = pred[:4, :].T  # [8400, 4] cx, cy, w, h (pixels)
-                    cls_preds = pred[4:, :].T  # [8400, 80] class scores
-
-                    # We only care about our 8 classes (indices 0-7)
-                    cls_preds_8 = cls_preds[:, :8]  # [8400, 8]
-
-                    # Use top-1 class and confidence from our 8 classes only
-                    max_conf, max_cls = cls_preds_8.max(dim=1)  # [8400]
-
-                    # Filter by confidence
-                    mask = max_conf > conf_thres
-                    if mask.sum() == 0:
+                    boxes, confs, cls_ids = self._decode_predictions(raw_preds, conf_thres)
+                    if boxes is None:
                         img_idx += 1
                         continue
 
-                    boxes = box_preds[mask]  # [N, 4] cx, cy, w, h (pixels)
-                    confs = max_conf[mask]   # [N]
-                    cls_ids = max_cls[mask]  # [N]
+                # Apply NMS using torchvision
+                from torchvision.ops import nms as tv_nms
+                keep = tv_nms(boxes, confs, iou_thres)
+                nms_boxes = boxes[keep]
+                nms_confs = confs[keep]
+                nms_cls = cls_ids[keep]
 
-                    # Normalize to [0,1]: x by width, y by height (2:1 aspect ratio)
-                    boxes_norm = boxes.clone()
-                    boxes_norm[:, 0] = boxes[:, 0] / input_w  # cx / width
-                    boxes_norm[:, 1] = boxes[:, 1] / input_h  # cy / height
-                    boxes_norm[:, 2] = boxes[:, 2] / input_w  # w / width
-                    boxes_norm[:, 3] = boxes[:, 3] / input_h  # h / height
+                for i in range(len(nms_confs)):
+                    all_predictions.append({
+                        'image_idx': img_idx,
+                        'class_id': nms_cls[i].item(),
+                        'conf': nms_confs[i].item(),
+                        'bbox': [nms_boxes[i, 0].item(), nms_boxes[i, 1].item(),
+                                 nms_boxes[i, 2].item(), nms_boxes[i, 3].item()],
+                    })
 
-                    # Convert cx,cy,w,h to x1,y1,x2,y2 (normalized)
-                    x1 = boxes_norm[:, 0] - boxes_norm[:, 2] / 2
-                    y1 = boxes_norm[:, 1] - boxes_norm[:, 3] / 2
-                    x2 = boxes_norm[:, 0] + boxes_norm[:, 2] / 2
-                    y2 = boxes_norm[:, 1] + boxes_norm[:, 3] / 2
-
-                    # Clamp to [0, 1]
-                    x1 = x1.clamp(0, 1)
-                    y1 = y1.clamp(0, 1)
-                    x2 = x2.clamp(0, 1)
-                    y2 = y2.clamp(0, 1)
-
-                    # Apply NMS using torchvision
-                    from torchvision.ops import nms as tv_nms
-                    nms_boxes = torch.stack([x1, y1, x2, y2], dim=1)  # [N, 4]
-                    keep = tv_nms(nms_boxes, confs, iou_thres)
-                    nms_boxes = nms_boxes[keep]
-                    nms_confs = confs[keep]
-                    nms_cls = cls_ids[keep]
-
-                    for i in range(len(nms_confs)):
-                        all_predictions.append({
+                # Collect targets
+                if bboxes is not None and b < len(bboxes):
+                    gt = bboxes[b]  # [N, 5] class, cx, cy, w, h
+                    for g in range(gt.shape[0]):
+                        cx, cy, w, h = gt[g, 1].item(), gt[g, 2].item(), gt[g, 3].item(), gt[g, 4].item()
+                        gx1 = cx - w / 2
+                        gy1 = cy - h / 2
+                        gx2 = cx + w / 2
+                        gy2 = cy + h / 2
+                        all_targets.append({
                             'image_idx': img_idx,
-                            'class_id': nms_cls[i].item(),
-                            'conf': nms_confs[i].item(),
-                            'bbox': [nms_boxes[i, 0].item(), nms_boxes[i, 1].item(),
-                                     nms_boxes[i, 2].item(), nms_boxes[i, 3].item()],
+                            'class_id': int(gt[g, 0].item()),
+                            'bbox': [gx1, gy1, gx2, gy2],
                         })
 
-                    # Collect targets
-                    if bboxes is not None and b < len(bboxes):
-                        gt = bboxes[b]  # [N, 5] class, cx, cy, w, h
-                        for g in range(gt.shape[0]):
-                            cx, cy, w, h = gt[g, 1].item(), gt[g, 2].item(), gt[g, 3].item(), gt[g, 4].item()
-                            gx1 = cx - w / 2
-                            gy1 = cy - h / 2
-                            gx2 = cx + w / 2
-                            gy2 = cy + h / 2
-                            all_targets.append({
-                                'image_idx': img_idx,
-                                'class_id': int(gt[g, 0].item()),
-                                'bbox': [gx1, gy1, gx2, gy2],
-                            })
-
-                    img_idx += 1
+                img_idx += 1
 
         # Debug: print prediction statistics
         print(f"  [Debug] Predictions: {len(all_predictions)}, Targets: {len(all_targets)}")
