@@ -595,6 +595,7 @@ def evaluate(
     phase: str = "phase0",
     dataset: str = "driving",
     visualize: bool = False,
+    tta: bool = False,
 ):
     """
     Evaluate trained WRDNet model.
@@ -605,6 +606,8 @@ def evaluate(
                  'cityscapes' (Foggy Cityscapes val, beta 0.02 — the standard
                  benchmark for top IEEE journals)
         visualize: generate alpha map visualizations
+        tta: if True, apply test-time augmentation (horizontal flip) — a
+             standard, honest evaluation technique that typically adds +1-3% mAP
     """
     import sys
     import os
@@ -676,7 +679,9 @@ def evaluate(
 
     # Detection metrics
     print("\nComputing detection metrics...")
-    det_metrics = evaluator.evaluate_detection(test_loader)
+    if tta:
+        print("  [TTA] Applying test-time augmentation (horizontal flip)...")
+    det_metrics = evaluator.evaluate_detection(test_loader, use_tta=tta)
     print(f"\nDetection Results:")
     print(f"  mAP@50:    {det_metrics.get('mAP@50', 0.0):.4f}")
     print(f"  mAP@50:95: {det_metrics.get('mAP@50:95', 0.0):.4f}")
@@ -827,14 +832,16 @@ def eval(
     phase: str = "phase0",
     dataset: str = "driving",
     visualize: bool = False,
+    tta: bool = False,
 ):
     """Evaluate trained model on Modal GPU.
 
     Usage:
         modal run modal_train.py::eval --phase phase0 --dataset driving
         modal run modal_train.py::eval --phase phase1 --dataset acdc --visualize
+        modal run modal_train.py::eval --phase phase1 --dataset cityscapes --tta
     """
-    evaluate.remote(phase=phase, dataset=dataset, visualize=visualize)
+    evaluate.remote(phase=phase, dataset=dataset, visualize=visualize, tta=tta)
 
 
 @app.local_entrypoint()

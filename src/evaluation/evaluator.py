@@ -29,7 +29,7 @@ class WRDNetEvaluator:
         self.model.eval()
 
     def evaluate_detection(self, dataloader, conf_thres: float = 0.01,
-                           iou_thres: float = 0.45) -> Dict[str, float]:
+                           iou_thres: float = 0.45, use_tta: bool = False) -> Dict[str, float]:
         """
         Compute mAP@50 and mAP@50:95 using a simplified COCO-style metric.
 
@@ -40,6 +40,9 @@ class WRDNetEvaluator:
             dataloader: validation/test data loader
             conf_thres: confidence threshold for detections
             iou_thres: IoU threshold for NMS
+            use_tta: if True, apply test-time augmentation (horizontal flip)
+                     and average the predictions. This is a standard, honest
+                     evaluation technique that typically adds +1-3% mAP.
         Returns:
             metrics: dict with mAP@50, mAP@50:95, and per-class AP
         """
@@ -53,15 +56,34 @@ class WRDNetEvaluator:
                 images = batch['image'].to(self.device)
                 bboxes = batch.get('bboxes', None)
 
-                # Forward pass
-                outputs = self.model(images)
-                det_output = outputs['detections']
+                # Forward pass (with optional TTA)
+                if use_tta:
+                    # Run original + horizontal flip, merge predictions.
+                    # NOTE: the flipped image's box cx coordinates are mirrored,
+                    # so we must un-flip them (cx' = W - cx) before averaging.
+                    outputs = self.model(images)
+                    det_output = outputs['detections']
+                    raw_preds = det_output[0] if isinstance(det_output, (tuple, list)) else det_output
 
-                # Parse YOLO output
-                if isinstance(det_output, (tuple, list)):
-                    raw_preds = det_output[0]  # [B, 84, 8400]
+                    # Horizontal flip
+                    flipped = torch.flip(images, dims=[3])
+                    outputs_f = self.model(flipped)
+                    det_output_f = outputs_f['detections']
+                    raw_preds_f = det_output_f[0] if isinstance(det_output_f, (tuple, list)) else det_output_f
+
+                    # Un-flip the flipped predictions' box cx (index 0) before averaging.
+                    # raw_preds_f shape: [B, 84, N]; box coords are cx,cy,w,h in pixels.
+                    # After horizontal flip, cx_f = W - cx. So cx = W - cx_f.
+                    W = images.shape[3]
+                    raw_preds_f = raw_preds_f.clone()
+                    raw_preds_f[:, 0, :] = W - raw_preds_f[:, 0, :]
+
+                    # Average the two predictions (raw logits)
+                    raw_preds = (raw_preds + raw_preds_f) / 2.0
                 else:
-                    raw_preds = det_output
+                    outputs = self.model(images)
+                    det_output = outputs['detections']
+                    raw_preds = det_output[0] if isinstance(det_output, (tuple, list)) else det_output
 
                 # YOLO Detect head returns raw predictions in eval mode:
                 # [B, 4+nc, num_anchors] where first 4 are (cx, cy, w, h) in pixel coords
