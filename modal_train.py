@@ -786,6 +786,7 @@ def plot_alpha_depth(phase: str = "phase1"):
     import subprocess
     result = subprocess.run([
         sys.executable, "scripts/plot_alpha_vs_depth.py",
+        "--config", "configs/default.yaml",
         "--checkpoint", ckpt_path,
         "--output", f"/checkpoints/{phase}/alpha_vs_depth.png",
         "--num-samples", "500",

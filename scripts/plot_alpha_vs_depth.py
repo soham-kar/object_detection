@@ -54,7 +54,14 @@ def main():
             images = batch['image'].to(device)
             outputs = model(images, return_depth=True, return_alpha=True)
 
-            alpha = outputs['alpha_maps']['stage2'].cpu().numpy().flatten()
+            # Alpha maps use keys 'P3', 'P4', 'P5' (not 'stage2'). Use P3
+            # (highest resolution) for the alpha-vs-depth correlation.
+            alpha_maps = outputs['alpha_maps']
+            if isinstance(alpha_maps, dict):
+                alpha_key = 'P3' if 'P3' in alpha_maps else list(alpha_maps.keys())[0]
+                alpha = alpha_maps[alpha_key].cpu().numpy().flatten()
+            else:
+                alpha = alpha_maps.cpu().numpy().flatten()
             depth = outputs['depth_640'].cpu().numpy().flatten()
 
             alphas.extend(alpha.tolist())
