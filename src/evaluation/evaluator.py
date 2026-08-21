@@ -28,21 +28,22 @@ class WRDNetEvaluator:
         self.model.to(self.device)
         self.model.eval()
 
-    def _decode_predictions(self, raw_preds, conf_thres: float = 0.01):
+    def _decode_predictions(self, raw_preds, b: int, conf_thres: float = 0.01):
         """
         Decode raw YOLO predictions into normalized [x1,y1,x2,y2] boxes.
 
         Args:
             raw_preds: [B, 4+nc, N] raw predictions (cx, cy, w, h in pixels + class logits)
+            b: batch index of the image to decode
             conf_thres: confidence threshold
         Returns:
-            (boxes, confs, cls_ids) for the FIRST image in the batch, or
-            (None, None, None) if no detections pass the threshold.
+            (boxes, confs, cls_ids) for image b, or (None, None, None) if no
+            detections pass the threshold.
         """
         # YOLO input size — (H, W) tuple for 2:1 aspect ratio.
         input_h, input_w = 512, 1024  # YOLO input size (config.input_size_detect)
 
-        pred = raw_preds[0]  # [84, N]
+        pred = raw_preds[b]  # [84, N]
         # Extract box coords (cx, cy, w, h) in PIXEL coordinates
         box_preds = pred[:4, :].T  # [N, 4] cx, cy, w, h (pixels)
         cls_preds = pred[4:, :].T  # [N, 80] class scores
@@ -111,6 +112,7 @@ class WRDNetEvaluator:
             for batch in tqdm(dataloader, desc="Evaluating detection"):
                 images = batch['image'].to(self.device)
                 bboxes = batch.get('bboxes', None)
+                B = images.shape[0]
 
                 # Forward pass (with optional TTA)
                 if use_tta:
@@ -126,71 +128,75 @@ class WRDNetEvaluator:
                     outputs_f = self.model(flipped)
                     det_output_f = outputs_f['detections']
                     raw_preds_f = det_output_f[0] if isinstance(det_output_f, (tuple, list)) else det_output_f
-
-                    # Decode both passes into normalized [x1,y1,x2,y2] boxes
-                    boxes_a, confs_a, cls_a = self._decode_predictions(raw_preds, conf_thres)
-                    boxes_b, confs_b, cls_b = self._decode_predictions(raw_preds_f, conf_thres)
-
-                    # Un-flip the flipped boxes (x1' = 1 - x2, x2' = 1 - x1)
-                    if boxes_b is not None and len(boxes_b) > 0:
-                        boxes_b = boxes_b.clone()
-                        x1_b, x2_b = boxes_b[:, 0].clone(), boxes_b[:, 2].clone()
-                        boxes_b[:, 0] = 1.0 - x2_b
-                        boxes_b[:, 2] = 1.0 - x1_b
-
-                    # Merge the two sets
-                    if boxes_a is not None and boxes_b is not None:
-                        boxes = torch.cat([boxes_a, boxes_b], dim=0)
-                        confs = torch.cat([confs_a, confs_b], dim=0)
-                        cls_ids = torch.cat([cls_a, cls_b], dim=0)
-                    elif boxes_a is not None:
-                        boxes, confs, cls_ids = boxes_a, confs_a, cls_a
-                    elif boxes_b is not None:
-                        boxes, confs, cls_ids = boxes_b, confs_b, cls_b
-                    else:
-                        img_idx += 1
-                        continue
                 else:
                     outputs = self.model(images)
                     det_output = outputs['detections']
                     raw_preds = det_output[0] if isinstance(det_output, (tuple, list)) else det_output
-                    boxes, confs, cls_ids = self._decode_predictions(raw_preds, conf_thres)
-                    if boxes is None:
-                        img_idx += 1
-                        continue
+                    raw_preds_f = None
 
-                # Apply NMS using torchvision
-                from torchvision.ops import nms as tv_nms
-                keep = tv_nms(boxes, confs, iou_thres)
-                nms_boxes = boxes[keep]
-                nms_confs = confs[keep]
-                nms_cls = cls_ids[keep]
+                for b in range(B):
+                    # Decode the original pass for image b
+                    boxes_a, confs_a, cls_a = self._decode_predictions(raw_preds, b, conf_thres)
 
-                for i in range(len(nms_confs)):
-                    all_predictions.append({
-                        'image_idx': img_idx,
-                        'class_id': nms_cls[i].item(),
-                        'conf': nms_confs[i].item(),
-                        'bbox': [nms_boxes[i, 0].item(), nms_boxes[i, 1].item(),
-                                 nms_boxes[i, 2].item(), nms_boxes[i, 3].item()],
-                    })
+                    if use_tta:
+                        # Decode the flipped pass for image b
+                        boxes_b, confs_b, cls_b = self._decode_predictions(raw_preds_f, b, conf_thres)
+                        # Un-flip the flipped boxes (x1' = 1 - x2, x2' = 1 - x1)
+                        if boxes_b is not None and len(boxes_b) > 0:
+                            boxes_b = boxes_b.clone()
+                            x1_b, x2_b = boxes_b[:, 0].clone(), boxes_b[:, 2].clone()
+                            boxes_b[:, 0] = 1.0 - x2_b
+                            boxes_b[:, 2] = 1.0 - x1_b
+                        # Merge the two sets
+                        if boxes_a is not None and boxes_b is not None:
+                            boxes = torch.cat([boxes_a, boxes_b], dim=0)
+                            confs = torch.cat([confs_a, confs_b], dim=0)
+                            cls_ids = torch.cat([cls_a, cls_b], dim=0)
+                        elif boxes_a is not None:
+                            boxes, confs, cls_ids = boxes_a, confs_a, cls_a
+                        elif boxes_b is not None:
+                            boxes, confs, cls_ids = boxes_b, confs_b, cls_b
+                        else:
+                            img_idx += 1
+                            continue
+                    else:
+                        if boxes_a is None:
+                            img_idx += 1
+                            continue
+                        boxes, confs, cls_ids = boxes_a, confs_a, cls_a
 
-                # Collect targets
-                if bboxes is not None and b < len(bboxes):
-                    gt = bboxes[b]  # [N, 5] class, cx, cy, w, h
-                    for g in range(gt.shape[0]):
-                        cx, cy, w, h = gt[g, 1].item(), gt[g, 2].item(), gt[g, 3].item(), gt[g, 4].item()
-                        gx1 = cx - w / 2
-                        gy1 = cy - h / 2
-                        gx2 = cx + w / 2
-                        gy2 = cy + h / 2
-                        all_targets.append({
+                    # Apply NMS using torchvision
+                    from torchvision.ops import nms as tv_nms
+                    keep = tv_nms(boxes, confs, iou_thres)
+                    nms_boxes = boxes[keep]
+                    nms_confs = confs[keep]
+                    nms_cls = cls_ids[keep]
+
+                    for i in range(len(nms_confs)):
+                        all_predictions.append({
                             'image_idx': img_idx,
-                            'class_id': int(gt[g, 0].item()),
-                            'bbox': [gx1, gy1, gx2, gy2],
+                            'class_id': nms_cls[i].item(),
+                            'conf': nms_confs[i].item(),
+                            'bbox': [nms_boxes[i, 0].item(), nms_boxes[i, 1].item(),
+                                     nms_boxes[i, 2].item(), nms_boxes[i, 3].item()],
                         })
 
-                img_idx += 1
+                    # Collect targets
+                    if bboxes is not None and b < len(bboxes):
+                        gt = bboxes[b]  # [N, 5] class, cx, cy, w, h
+                        for g in range(gt.shape[0]):
+                            cx, cy, w, h = gt[g, 1].item(), gt[g, 2].item(), gt[g, 3].item(), gt[g, 4].item()
+                            gx1 = cx - w / 2
+                            gy1 = cy - h / 2
+                            gx2 = cx + w / 2
+                            gy2 = cy + h / 2
+                            all_targets.append({
+                                'image_idx': img_idx,
+                                'class_id': int(gt[g, 0].item()),
+                                'bbox': [gx1, gy1, gx2, gy2],
+                            })
+
+                    img_idx += 1
 
         # Debug: print prediction statistics
         print(f"  [Debug] Predictions: {len(all_predictions)}, Targets: {len(all_targets)}")
