@@ -61,11 +61,19 @@ def main():
             alpha_maps = outputs['alpha_maps']
             if isinstance(alpha_maps, dict):
                 alpha_key = 'P3' if 'P3' in alpha_maps else list(alpha_maps.keys())[0]
-                alpha = alpha_maps[alpha_key].cpu().numpy().flatten()
+                alpha = alpha_maps[alpha_key]  # [1, 1, H_a, W_a]
             else:
-                alpha = alpha_maps.cpu().numpy().flatten()
-            # The model's forward returns depth under key 'depth' (not 'depth_640')
-            depth = outputs['depth'].cpu().numpy().flatten()
+                alpha = alpha_maps
+            # The model's forward returns depth under key 'depth' (not 'depth_640').
+            # Depth is full-resolution; resize it to match alpha's spatial size so
+            # the two arrays have the same number of elements.
+            depth = outputs['depth']  # [1, 1, H_d, W_d]
+            if depth.shape[2:] != alpha.shape[2:]:
+                depth = torch.nn.functional.interpolate(
+                    depth, size=alpha.shape[2:], mode='bilinear', align_corners=False
+                )
+            alpha = alpha.cpu().numpy().flatten()
+            depth = depth.cpu().numpy().flatten()
 
             alphas.extend(alpha.tolist())
             depths.extend(depth.tolist())
