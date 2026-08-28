@@ -767,14 +767,14 @@ def plot_alpha_depth(phase: str = "phase1"):
     from src.data.dataset import build_dataloaders
 
     config = load_config("configs/default.yaml")
-    config.use_depth = True
-    config.use_dg_fsg = True
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     model = WRDNet(config).to(device)
     ckpt_path = f"/checkpoints/{phase}/best.pth"
     ckpt = torch.load(ckpt_path, map_location=device)
-    model.load_state_dict(ckpt["model_state_dict"])
+    # strict=False: the checkpoint may have been trained with a different FSG
+    # variant (e.g., plain FSG vs DG-FSG). Load what matches, ignore the rest.
+    model.load_state_dict(ckpt["model_state_dict"], strict=False)
     model.eval()
     print(f"Loaded checkpoint: {ckpt_path}")
 
