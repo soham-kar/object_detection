@@ -5,6 +5,8 @@ import sys
 import argparse
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+# DehazeFormer module (cloned to /tmp/DehazeFormer on Modal)
+sys.path.insert(0, '/tmp/DehazeFormer')
 
 import torch
 import numpy as np
