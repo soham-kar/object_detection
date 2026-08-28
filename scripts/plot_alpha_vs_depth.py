@@ -64,7 +64,8 @@ def main():
                 alpha = alpha_maps[alpha_key].cpu().numpy().flatten()
             else:
                 alpha = alpha_maps.cpu().numpy().flatten()
-            depth = outputs['depth_640'].cpu().numpy().flatten()
+            # The model's forward returns depth under key 'depth' (not 'depth_640')
+            depth = outputs['depth'].cpu().numpy().flatten()
 
             alphas.extend(alpha.tolist())
             depths.extend(depth.tolist())
