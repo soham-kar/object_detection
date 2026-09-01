@@ -10,8 +10,9 @@ model:
   input_size_dehaze: [384, 768]   # DehazeFormer resolution (2:1, lighter than detect)
   input_size_detect: [512, 1024]  # YOLO resolution (2:1 aspect ratio, Height, Width)
   fsg_channels: [256, 256, 512]  # P3, P4, P5 channels (verified from YOLOv11s)
+  use_fsg: true
   use_depth: true
-  use_dg_fsg: false  # Set to true for E12 (DG-FSG experiment)
+  use_dg_fsg: true  # DG-FSG enabled for Phase 1 (depth-guided fusion)
 
 # Data configuration
 data:
@@ -32,8 +33,8 @@ training:
   batch_size: 16
   # force_batch_size overrides the auto-selection in modal_train.py for PHASE 1
   # only (Phase 0 uses the GPU-memory-aware auto-selector). On H100 (80GB),
-  # Phase 1 uses bs=6 (DCT real path) or bs=8 (FSG-consistency).
-  force_batch_size: 10
+  # DCT real path is heavy → bs=6 (safe). FDA-only could use bs=12.
+  force_batch_size: 6
   num_workers: 4
   lr: 1.0e-3
   optimizer: 'AdamW'
@@ -99,7 +100,7 @@ domain_adaptation:
   # NOTE: set to FALSE now — RESUMING the all-3 test from the epoch-2 checkpoint
   # (mAP 0.3550). This is the same run (started from Phase 0), just continuing.
   # force_fresh_phase1=true would discard the 2 epochs of progress.
-  force_fresh_phase1: false
+  force_fresh_phase1: true
 
   # FDA schedule (only active when use_fda: true)
   # Lowered fda_start_epoch to 2 so FDA activates immediately — we only have

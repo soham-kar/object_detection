@@ -217,9 +217,17 @@ class WRDNetTrainer:
             return
         gates = self.model.fsg.gates
         for gate in gates:
-            # gate[-2] is the final Conv2d (before Sigmoid)
-            nn.init.zeros_(gate[-2].weight)
-            nn.init.constant_(gate[-2].bias, -4.0)
+            # Handle both gate structures:
+            #   - Plain FSG: gate is an nn.Sequential (final Conv2d at [-2])
+            #   - DG-FSG: gate is an nn.ModuleDict with a 'gating' key holding
+            #     the nn.Sequential (final Conv2d at gating_net[-2])
+            if isinstance(gate, nn.ModuleDict):
+                gating_net = gate['gating']
+            else:
+                gating_net = gate
+            # gating_net[-2] is the final Conv2d (before Sigmoid)
+            nn.init.zeros_(gating_net[-2].weight)
+            nn.init.constant_(gating_net[-2].bias, -4.0)
         print(f"  [reset_fsg_gate] Re-initialized {len(gates)} FSG gates to near-identity (alpha≈0.018)")
 
     def _move_to_device(self, batch: dict) -> dict:
