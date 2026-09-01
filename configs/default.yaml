@@ -30,8 +30,9 @@ training:
   phase: 'warmup'
   epochs: 30
   batch_size: 16
-  # force_batch_size overrides the auto-selection. Keep bs=10 on H100 (80GB):
-  # bs=10 uses only ~55GB, fits in 80GB, same mAP quality at lower cost than H200.
+  # force_batch_size overrides the auto-selection in modal_train.py for PHASE 1
+  # only (Phase 0 uses the GPU-memory-aware auto-selector). On H100 (80GB),
+  # Phase 1 uses bs=6 (DCT real path) or bs=8 (FSG-consistency).
   force_batch_size: 10
   num_workers: 4
   lr: 1.0e-3

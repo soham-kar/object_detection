@@ -56,7 +56,9 @@ class WRDNet(nn.Module):
         )
 
         # Feature fusion
-        fsg_channels = getattr(config, 'fsg_channels', [256, 512, 1024])
+        # YOLOv11s backbone channels: P3=256, P4=256, P5=512 (verified in yolov11.py).
+        # NOTE: the fallback must match YOLOv11s, NOT YOLOv8 (which was [256,512,1024]).
+        fsg_channels = getattr(config, 'fsg_channels', [256, 256, 512])
         use_depth = getattr(config, 'use_depth', False)
         use_dg_fsg = getattr(config, 'use_dg_fsg', False)
         use_cdmsa = getattr(config, 'use_cdmsa', True)
@@ -94,10 +96,6 @@ class WRDNet(nn.Module):
         self.use_fda = getattr(config, 'use_fda', False)
         self.use_dct_align = getattr(config, 'use_dct_align', False)
         self.use_fsg_consistency = getattr(config, 'use_fsg_consistency', False)
-
-        # Debug print counter — gates the [DBG] print to run every 200 steps
-        # instead of every step (avoids GPU→CPU sync stall on every batch).
-        self._dbg_step = 0
 
     def forward(
         self,
@@ -250,24 +248,6 @@ class WRDNet(nn.Module):
             # Bypass FSG — feed YOLO's original features directly (isolation test)
             fused_s = orig_features_s
             alpha_s = {name: torch.zeros_like(orig_features_s[name][:, :1]) for name in orig_features_s}
-
-        # --- DEBUG BLOCK ---
-        # NOTE: This print runs on EVERY training step and calls .item() which
-        # forces a GPU→CPU sync, stalling the pipeline. With 1737 steps/epoch,
-        # that's 1737 synchronous prints per epoch → massive slowdown (60 min/epoch).
-        # Gate it to run only every N steps (e.g., 200) to keep the GPU fed.
-        if self.training and self._dbg_step % 200 == 0:
-            # Check if fused_s is a dict or list/tuple
-            if isinstance(fused_s, dict):
-                p3_feat = fused_s.get('P3', list(fused_s.values())[0])
-            else:
-                p3_feat = fused_s[0] if isinstance(fused_s, (list, tuple)) else fused_s
-
-            print(f"[DBG] fused max: {p3_feat.max().item():.2f} | orig max: {orig_features_s['P3'].max().item():.2f} | rest max: {rest_features_s_up['P3'].max().item():.2f} | img max: {synth_img.max().item():.2f}")
-            if torch.isnan(p3_feat).any():
-                print("[DBG] >>> FUSED FEATURES ARE NAN <<<")
-        self._dbg_step += 1
-        # --- END DEBUG BLOCK ---
 
         outputs['fused_s'] = fused_s
         outputs['alpha_s'] = alpha_s
