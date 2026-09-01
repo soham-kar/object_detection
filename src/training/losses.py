@@ -159,6 +159,19 @@ class WRDNetLoss(nn.Module):
         progress = min(1.0, self.current_epoch / self.domain_warmup_epochs)
         return self.lambda_domain * progress
 
+    def _effective_lambda_fsg(self) -> float:
+        """Return the FSG-consistency weight, ramping up during warmup.
+
+        Mirrors _effective_lambda_domain so the FSG-consistency loss is also
+        ramped from 0 to lambda_fsg over the warmup epochs, instead of hitting
+        the model at full strength from epoch 0 (which destabilizes the
+        detector before it has converged).
+        """
+        if self.domain_warmup_epochs <= 0:
+            return self.lambda_fsg
+        progress = min(1.0, self.current_epoch / self.domain_warmup_epochs)
+        return self.lambda_fsg * progress
+
     def silog_loss(
         self,
         pred_depth: torch.Tensor,
@@ -375,7 +388,7 @@ class WRDNetLoss(nn.Module):
         total = total + self.lambda_depth * losses['depth']
         total = total + self.lambda_entropy * losses['entropy']
         total = total + self._effective_lambda_domain() * losses['domain']
-        total = total + self.lambda_fsg * losses['fsg_cons']
+        total = total + self._effective_lambda_fsg() * losses['fsg_cons']
         losses['total'] = total
 
         return losses

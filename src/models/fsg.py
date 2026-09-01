@@ -67,13 +67,17 @@ class FeatureSelectionGate(nn.Module):
             nn.init.constant_(gate[-2].bias, -4.0)
             self.gates.append(gate)
 
-        # Output BatchNorm per scale to normalize fused features before they
-        # enter the YOLO neck. This stabilizes the feature magnitudes so the
-        # DFL in the detection head doesn't saturate at the box-edge bins.
-        # NOTE: The original YOLO backbone features also have magnitude ~7-10,
-        # so this is a defensive normalization, not a guaranteed fix.
+        # Output GroupNorm per scale to normalize fused features before they
+        # enter the YOLO neck. GroupNorm (unlike BatchNorm) has NO running
+        # statistics, so it behaves identically in train and eval mode. This
+        # removes the train/eval mismatch that caused mAP oscillation: with
+        # BatchNorm, the FSG gate shifts the feature distribution every step,
+        # and the running stats lag behind, so validation saw a different
+        # normalization than training. GroupNorm also normalizes within each
+        # sample (across channel groups), so it is independent of batch size —
+        # critical for the small Phase-2 batch (bs=6).
         self.output_bns = nn.ModuleList([
-            nn.BatchNorm2d(ch) for ch in channels_list
+            nn.GroupNorm(num_groups=32, num_channels=ch) for ch in channels_list
         ])
 
         # Magnitude clamp on fused features before they enter the YOLO neck.
@@ -128,8 +132,9 @@ class FeatureSelectionGate(nn.Module):
             fused = alpha * f_rest + (1.0 - alpha) * f_orig
 
             # Normalize fused features before they enter the YOLO neck.
-            # BatchNorm provides smooth normalization (zero-mean, unit-variance
-            # per channel) without the hard clipping of a magnitude clamp.
+            # GroupNorm provides smooth normalization (zero-mean, unit-variance
+            # per group) with NO running statistics, so train and eval behave
+            # identically — no train/eval mismatch, no batch-size dependence.
             fused = self.output_bns[i](fused)
 
             # Clamp to a safe magnitude range to prevent DFL collapse.

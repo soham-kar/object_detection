@@ -127,8 +127,14 @@ class DCTFeatureAlignment(nn.Module):
         else:
             domain_loss = self._adversarial_loss(processed_bands, domain_labels)
 
-        # Recombine bands (simplified: just return original features)
-        # In a full implementation, we would modulate features by band alignment
+        # NOTE: aligned_features is intentionally left as the original features.
+        # This module is a LOSS-ONLY regularizer: the MMD/adversarial loss pulls
+        # the DehazeFormer encoder features toward domain invariance, but the
+        # features themselves are NOT modified before entering the YOLO neck.
+        # Feeding inverse-DCT-modulated features into the YOLO neck would risk
+        # DFL instability (box collapse), so we keep the transform out of the
+        # detection path. The caller (wrnet.py) discards this return value and
+        # uses only domain_loss.
         aligned_features = features
 
         return aligned_features, domain_loss
@@ -141,22 +147,23 @@ class DCTFeatureAlignment(nn.Module):
         if synthetic_mask.sum() == 0 or real_mask.sum() == 0:
             return torch.tensor(0.0, device=domain_labels.device)
 
-        # Concatenate all band representations
-        all_bands = torch.cat(bands, dim=1)  # [B, num_bands * C//2]
-
-        synth = all_bands[synthetic_mask]
-        real = all_bands[real_mask]
-
-        # MMD with RBF kernel (simplified)
-        mean_synth = synth.mean(dim=0)
-        mean_real = real.mean(dim=0)
-        mmd = torch.norm(mean_synth - mean_real, p=2)
-
-        # Weight by frequency importance
+        # Learnable per-band importance (softmax-normalized, sums to 1)
         weights = F.softmax(self.freq_weights, dim=0)
-        weighted_mmd = mmd * weights.sum()
 
-        return weighted_mmd
+        # Per-band MMD, weighted by frequency importance. Each band contributes
+        # independently so the model can learn which DCT frequencies matter
+        # most for domain alignment. (Previously the weights summed to 1.0 and
+        # had no effect on the loss.)
+        total_mmd = 0.0
+        for i, band in enumerate(bands):
+            synth = band[synthetic_mask]  # [B_s, C//2]
+            real = band[real_mask]        # [B_r, C//2]
+            mean_synth = synth.mean(dim=0)
+            mean_real = real.mean(dim=0)
+            band_mmd = torch.norm(mean_synth - mean_real, p=2)
+            total_mmd = total_mmd + weights[i] * band_mmd
+
+        return total_mmd
 
     def _adversarial_loss(self, bands: list, domain_labels: torch.Tensor) -> torch.Tensor:
         """Adversarial domain classification loss."""

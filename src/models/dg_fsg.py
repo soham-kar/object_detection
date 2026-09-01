@@ -109,9 +109,15 @@ class DepthGuidedFSG(nn.Module):
         })
 
     def _make_output_bns(self):
-        """Output BatchNorm per scale to normalize fused features before the YOLO neck."""
+        """Output GroupNorm per scale to normalize fused features before the YOLO neck.
+
+        GroupNorm (unlike BatchNorm) has no running statistics, so it behaves
+        identically in train and eval mode. This removes the train/eval mismatch
+        that caused mAP oscillation, and it is independent of batch size —
+        critical for the small Phase-2 batch (bs=6).
+        """
         return nn.ModuleList([
-            nn.BatchNorm2d(ch) for ch in self.channels_list
+            nn.GroupNorm(num_groups=32, num_channels=ch) for ch in self.channels_list
         ])
 
     def forward(
@@ -171,7 +177,8 @@ class DepthGuidedFSG(nn.Module):
             fused = alpha * f_rest + (1.0 - alpha) * f_orig
 
             # Normalize fused features before they enter the YOLO neck.
-            # BatchNorm provides smooth normalization without hard clipping.
+            # GroupNorm provides smooth normalization with no running stats,
+            # so train and eval behave identically (no train/eval mismatch).
             fused = self.output_bns[i](fused)
 
             # Clamp to safe magnitude range to prevent DFL collapse
