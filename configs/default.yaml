@@ -33,8 +33,9 @@ training:
   batch_size: 16
   # force_batch_size overrides the auto-selection in modal_train.py for PHASE 1
   # only (Phase 0 uses the GPU-memory-aware auto-selector). On H100 (80GB),
-  # DCT real path is heavy → bs=6 (safe). FDA-only could use bs=12.
-  force_batch_size: 6
+  # bs=8 → 8 images/step (6 synth + 2 real), ~50GB, safe headroom. bs=12 would
+  # be ~76GB (risky with DG-FSG depth decoder added on top of the DCT real path).
+  force_batch_size: 8
   num_workers: 4
   lr: 1.0e-3
   optimizer: 'AdamW'
