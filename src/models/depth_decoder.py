@@ -37,22 +37,26 @@ class DepthDecoder(nn.Module):
             self.output_size = (output_size, output_size)
 
         # Stage 1: bottleneck → 2× upsampling
+        # GroupNorm (not BatchNorm): no running stats, so train/eval behave
+        # identically and it is independent of batch size. The depth decoder is
+        # randomly initialized in Phase 1, so BatchNorm running stats would be
+        # garbage and add a train/eval mismatch on top of the random init.
         self.up1 = nn.Sequential(
             nn.ConvTranspose2d(bottleneck_channels, 64, kernel_size=2, stride=2),
-            nn.BatchNorm2d(64),
+            nn.GroupNorm(num_groups=8, num_channels=64),
             nn.ReLU(inplace=True),
             nn.Conv2d(64, 64, kernel_size=3, padding=1),
-            nn.BatchNorm2d(64),
+            nn.GroupNorm(num_groups=8, num_channels=64),
             nn.ReLU(inplace=True),
         )
 
         # Stage 2: 160×160 → 160×160 (refinement)
         self.refine = nn.Sequential(
             nn.Conv2d(64, 32, kernel_size=3, padding=1),
-            nn.BatchNorm2d(32),
+            nn.GroupNorm(num_groups=8, num_channels=32),
             nn.ReLU(inplace=True),
             nn.Conv2d(32, 16, kernel_size=3, padding=1),
-            nn.BatchNorm2d(16),
+            nn.GroupNorm(num_groups=8, num_channels=16),
             nn.ReLU(inplace=True),
         )
 

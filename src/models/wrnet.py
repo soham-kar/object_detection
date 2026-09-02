@@ -128,9 +128,12 @@ class WRDNet(nn.Module):
         if self.depth_decoder is not None:
             bottleneck = self.dehazeformer.get_bottleneck(x)  # [B, 96, 80, 80]
             depth_160, depth_640 = self.depth_decoder(bottleneck)
-            depth = depth_640
+            # Feed the LOW-RES depth (depth_160) to the gate — the gate
+            # interpolates to each scale anyway, so full-res depth is wasted
+            # compute. depth_640 is only needed for visualization.
+            depth = depth_160
             if return_depth:
-                outputs['depth'] = depth
+                outputs['depth'] = depth_640
 
         # CRITICAL FIX: YOLO backbone features from ORIGINAL foggy image (640x640),
         # NOT the restored image. YOLO needs original resolution/content for detection.
@@ -210,12 +213,15 @@ class WRDNet(nn.Module):
         depth_s = None
         if self.depth_decoder is not None:
             bottleneck_s = self.dehazeformer.get_bottleneck(rest_img)  # [B, 96, 80, 80]
-            _, depth_s = self.depth_decoder(bottleneck_s)
+            depth_160_s, depth_s = self.depth_decoder(bottleneck_s)
             # Guard: if depth decoder diverged to NaN, fall back to a constant
             # (zeros) so it doesn't corrupt FSG → YOLO → detection loss.
-            if torch.isnan(depth_s).any() or torch.isinf(depth_s).any():
-                print("  [WARNING] depth_s NaN — replacing with zeros to protect FSG")
+            if torch.isnan(depth_160_s).any() or torch.isinf(depth_160_s).any():
+                print("  [WARNING] depth NaN — replacing with zeros to protect FSG")
+                depth_160_s = torch.zeros_like(depth_160_s)
                 depth_s = torch.zeros_like(depth_s)
+            # depth_s (full-res) is used for the depth loss; depth_160_s (low-res)
+            # is fed to the gate (which interpolates to each scale anyway).
             outputs['depth_s'] = depth_s
 
         # CRITICAL FIX: YOLO backbone MUST get the ORIGINAL 640x640 foggy image,
@@ -240,8 +246,8 @@ class WRDNet(nn.Module):
 
         # FSG (or bypass if use_fsg=False)
         if self.use_fsg:
-            if isinstance(self.fsg, DepthGuidedFSG) and depth_s is not None:
-                fused_s, alpha_s = self.fsg(rest_features_s_up, orig_features_s, depth_s)
+            if isinstance(self.fsg, DepthGuidedFSG) and depth_160_s is not None:
+                fused_s, alpha_s = self.fsg(rest_features_s_up, orig_features_s, depth_160_s)
             else:
                 fused_s, alpha_s = self.fsg(rest_features_s_up, orig_features_s)
         else:
@@ -282,10 +288,12 @@ class WRDNet(nn.Module):
 
                 if self.use_fsg:
                     if isinstance(self.fsg, DepthGuidedFSG):
-                        # Depth decoder works on any image
+                        # Depth decoder works on any image. Feed the LOW-RES
+                        # depth (depth_160_r) to the gate — it interpolates to
+                        # each scale anyway, so full-res depth is wasted compute.
                         bottleneck_r = self.dehazeformer.get_bottleneck(real_img)
-                        _, depth_r = self.depth_decoder(bottleneck_r)
-                        fused_r, alpha_r = self.fsg(rest_features_r_up, orig_features_r, depth_r)
+                        depth_160_r, _ = self.depth_decoder(bottleneck_r)
+                        fused_r, alpha_r = self.fsg(rest_features_r_up, orig_features_r, depth_160_r)
                     else:
                         fused_r, alpha_r = self.fsg(rest_features_r_up, orig_features_r)
                 else:

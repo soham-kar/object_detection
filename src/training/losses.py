@@ -172,6 +172,20 @@ class WRDNetLoss(nn.Module):
         progress = min(1.0, self.current_epoch / self.domain_warmup_epochs)
         return self.lambda_fsg * progress
 
+    def _effective_lambda_depth(self) -> float:
+        """Return the depth loss weight, ramping up during warmup.
+
+        The depth decoder is randomly initialized in Phase 1 (Phase 0 disables
+        it), so its output is pure noise for the first several epochs. Applying
+        the full lambda_depth immediately would feed noisy depth gradients into
+        the gate and destabilize detection. Ramp it from 0 to lambda_depth over
+        the warmup epochs, exactly like the domain and FSG-consistency losses.
+        """
+        if self.domain_warmup_epochs <= 0:
+            return self.lambda_depth
+        progress = min(1.0, self.current_epoch / self.domain_warmup_epochs)
+        return self.lambda_depth * progress
+
     def silog_loss(
         self,
         pred_depth: torch.Tensor,
@@ -385,7 +399,7 @@ class WRDNetLoss(nn.Module):
         # ── Total ──
         total = losses['det']
         total = total + self.lambda_rest * losses['rest']
-        total = total + self.lambda_depth * losses['depth']
+        total = total + self._effective_lambda_depth() * losses['depth']
         total = total + self.lambda_entropy * losses['entropy']
         total = total + self._effective_lambda_domain() * losses['domain']
         total = total + self._effective_lambda_fsg() * losses['fsg_cons']
