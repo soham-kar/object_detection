@@ -1,8 +1,8 @@
 """Lightweight Depth Decoder for WRDNet.
 
 Attached to DehazeFormer-T's bottleneck (Stage 3, stride 4).
-Bottleneck: [B, 96, 80, 80] for 320×320 input.
-Produces metric depth maps at 160×160 (upsampled to 640×640).
+Bottleneck: [B, 96, H/4, W/4] (e.g., [B, 96, 96, 192] at 384×768 input).
+Produces metric depth maps at H/2×W/2 (upsampled to H×W for visualization).
 
 WHY THIS WORKS: DehazeFormer already learns depth implicitly through the
 atmospheric scattering model. The bottleneck contains transmission map
@@ -69,10 +69,10 @@ class DepthDecoder(nn.Module):
     def forward(self, bottleneck: torch.Tensor) -> tuple:
         """
         Args:
-            bottleneck: [B, 96, 80, 80] from DehazeFormer-T Stage 3
+            bottleneck: [B, 96, H/4, W/4] from DehazeFormer-T Stage 3
         Returns:
-            depth_160: [B, 1, 160, 160] normalized depth map
-            depth_640: [B, 1, 640, 640] upsampled to full resolution
+            depth_160: [B, 1, H/2, W/2] normalized depth map (fed to the gate)
+            depth_640: [B, 1, H, W] upsampled to full resolution (visualization)
         """
         x = self.up1(bottleneck)     # [B, 64, 160, 160]
         x = self.refine(x)           # [B, 16, 160, 160]

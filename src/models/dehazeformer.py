@@ -3,12 +3,12 @@
 Integrates the actual DehazeFormer from external/DehazeFormer.
 Extracts intermediate encoder features for FSG fusion.
 
-Architecture (DehazeFormer-T at 320×320 input):
-  Stage 1 (layer1):  [B, 24,  320, 320]  — 1× spatial
-  Stage 2 (layer2):  [B, 48,  160, 160]  — 1/2× spatial
-  Stage 3 (layer3):  [B, 96,   80,  80]  — 1/4× spatial (bottleneck)
-  Stage 4 (layer4):  [B, 48,  160, 160]  — 1/2× spatial (decoder)
-  Stage 5 (layer5):  [B, 24,  320, 320]  — 1× spatial (decoder)
+Architecture (DehazeFormer-T at 384×768 input, 2:1 aspect ratio):
+  Stage 1 (layer1):  [B, 24, 384, 768]  — 1× spatial
+  Stage 2 (layer2):  [B, 48, 192, 384]  — 1/2× spatial
+  Stage 3 (layer3):  [B, 96,  96, 192]  — 1/4× spatial (bottleneck)
+  Stage 4 (layer4):  [B, 48, 192, 384]  — 1/2× spatial (decoder)
+  Stage 5 (layer5):  [B, 24, 384, 768]  — 1× spatial (decoder)
 
 For FSG, we use encoder stages 1-3 and project them to YOLO feature dims.
 """
@@ -31,8 +31,8 @@ class DehazeFormerWrapper(nn.Module):
     """
     Wrapper around DehazeFormer-T with WRDNet-specific modifications.
 
-    - Runs at 320×320 for efficiency
-    - Upsamples restored image to 640×640 for YOLO
+    - Runs at 384×768 (2:1) for efficiency (config.input_size_dehaze)
+    - Upsamples restored image to 512×1024 (2:1) for YOLO (config.input_size_detect)
     - Extracts encoder features (stage1-3) for FSG fusion
     - Projects DehazeFormer channels to YOLO-compatible dimensions
     - Applies MAA to stages 1-2 (optional)
@@ -144,19 +144,20 @@ class DehazeFormerWrapper(nn.Module):
         stage3 = x
 
         return {
-            'stage1': stage1,   # [B, 24,  320, 320]
-            'stage2': stage2,   # [B, 48,  160, 160]
-            'stage3': stage3,   # [B, 96,   80,  80]
+            'stage1': stage1,   # [B, 24, H,   W]   (1× spatial)
+            'stage2': stage2,   # [B, 48, H/2, W/2] (1/2× spatial)
+            'stage3': stage3,   # [B, 96, H/4, W/4] (1/4× spatial, bottleneck)
         }
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
-        Forward pass: dehaze at 320×320, upsample restored image to 640×640.
+        Forward pass: dehaze at input_size (384×768), upsample restored image
+        to output_size (512×1024).
 
         Args:
-            x: [B, 3, H, W] foggy image (any size, will be resized to 320×320)
+            x: [B, 3, H, W] foggy image (any size, resized to input_size)
         Returns:
-            restored_image: [B, 3, 640, 640]
+            restored_image: [B, 3, output_size] (512×1024)
         """
         # Resize input to dehaze resolution
         if x.shape[-2:] != self.input_size:
@@ -204,7 +205,7 @@ class DehazeFormerWrapper(nn.Module):
     def get_stage2_features(self, x: torch.Tensor) -> torch.Tensor:
         """
         Returns raw Stage 2 features for DCT alignment.
-        Shape: [B, 48, 160, 160] for 320×320 input
+        Shape: [B, 48, H/2, W/2] (e.g., [B, 48, 192, 384] at 384×768 input)
         """
         if x.shape[-2:] != self.input_size:
             x = F.interpolate(x, size=self.input_size,
