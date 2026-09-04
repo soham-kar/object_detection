@@ -98,10 +98,10 @@ domain_adaptation:
   # the test — if FDA crashes, we couldn't tell if FDA is broken or if it
   # conflicted with the already-shifted FSG weights.
   #
-  # NOTE: set to TRUE now — the depth decoder architecture changed (BatchNorm →
-  # GroupNorm), so old Phase 1 checkpoints are incompatible. Restart fresh from
-  # Phase 0 best.pth with the stabilized depth decoder.
-  force_fresh_phase1: true
+  # NOTE: set to FALSE now — resuming the stabilized DG-FSG run from the latest
+  # Phase 1 checkpoint (epoch 4, mAP 0.4482). The depth decoder architecture is
+  # unchanged since the restart, so the checkpoints are compatible.
+  force_fresh_phase1: false
 
   # FDA schedule (only active when use_fda: true)
   # Lowered fda_start_epoch to 2 so FDA activates immediately — we only have
