@@ -72,7 +72,7 @@ training:
 
   # Early stopping
   early_stopping: true
-  early_stopping_patience: 10
+  early_stopping_patience: 5
   early_stopping_metric: 'mAP@50'
 
 domain_adaptation:
