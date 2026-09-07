@@ -29,6 +29,11 @@ class WRDNetLoss(nn.Module):
         self.lambda_fsg = getattr(config, 'lambda_fsg', 0.01)
         # Domain warmup: ramp lambda_domain from 0 to its value over first N epochs
         self.domain_warmup_epochs = getattr(config, 'domain_warmup_epochs', 0)
+        # Depth warmup: separate, shorter ramp for the depth loss. The depth
+        # decoder is randomly initialized, so it needs a ramp — but it can be
+        # shorter than the domain/FSG ramps to save training credits. Defaults
+        # to domain_warmup_epochs if not set.
+        self.depth_warmup_epochs = getattr(config, 'depth_warmup_epochs', self.domain_warmup_epochs)
         self.current_epoch = 0
 
         self.restoration_loss = nn.MSELoss()
@@ -179,11 +184,12 @@ class WRDNetLoss(nn.Module):
         it), so its output is pure noise for the first several epochs. Applying
         the full lambda_depth immediately would feed noisy depth gradients into
         the gate and destabilize detection. Ramp it from 0 to lambda_depth over
-        the warmup epochs, exactly like the domain and FSG-consistency losses.
+        depth_warmup_epochs (a separate, shorter ramp than domain/FSG so we can
+        save training credits without destabilizing the DA losses).
         """
-        if self.domain_warmup_epochs <= 0:
+        if self.depth_warmup_epochs <= 0:
             return self.lambda_depth
-        progress = min(1.0, self.current_epoch / self.domain_warmup_epochs)
+        progress = min(1.0, self.current_epoch / self.depth_warmup_epochs)
         return self.lambda_depth * progress
 
     def silog_loss(

@@ -58,6 +58,12 @@ training:
   # DA gradients start pulling (prevents the Phase 1 oscillation).
   domain_warmup_epochs: 25
 
+  # Depth warmup — separate, shorter ramp for the depth loss (lambda_depth).
+  # The depth decoder is randomly initialized, so it needs a ramp, but it can
+  # be shorter than the domain/FSG ramps to save training credits. Set to 10
+  # to reach full depth weight by epoch 10 instead of 25.
+  depth_warmup_epochs: 10
+
   # Logging
   log_interval: 5
   save_interval: 5
