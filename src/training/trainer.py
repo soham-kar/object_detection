@@ -477,6 +477,14 @@ class WRDNetTrainer:
         # Only load optimizer/scheduler if not strict (architecture changed → fresh optimizer)
         if strict:
             self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            # CRITICAL: load_state_dict restores the optimizer's param_groups
+            # lr from the checkpoint, which can be stale/high (e.g., a warmup
+            # state or a previous run's lr). This would explode the model.
+            # Reset every param group's lr to the config value so the freshly
+            # rebuilt scheduler controls the LR from here.
+            cfg_lr = getattr(self.config, 'lr', 2e-4)
+            for g in self.optimizer.param_groups:
+                g['lr'] = cfg_lr
             # CRITICAL: do NOT restore the scheduler state dict. The scheduler
             # may have been built with a stale T_max (e.g., the 8-epoch credit
             # cap made T_max=3, collapsing the LR to ~0). Rebuild the scheduler
