@@ -477,8 +477,15 @@ class WRDNetTrainer:
         # Only load optimizer/scheduler if not strict (architecture changed → fresh optimizer)
         if strict:
             self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-            if self.scheduler and checkpoint.get('scheduler_state_dict'):
-                self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+            # CRITICAL: do NOT restore the scheduler state dict. The scheduler
+            # may have been built with a stale T_max (e.g., the 8-epoch credit
+            # cap made T_max=3, collapsing the LR to ~0). Rebuild the scheduler
+            # fresh from the current config (which now uses cosine_t_max=120)
+            # and advance it to the current epoch so the LR schedule is correct.
+            if self.scheduler is not None:
+                resume_epoch = checkpoint.get('epoch', 0)
+                for _ in range(resume_epoch):
+                    self.scheduler.step()
         self.current_epoch = checkpoint.get('epoch', 0)
         self.best_metric = checkpoint.get('best_metric', 0.0)
         print(f"Loaded checkpoint from {path}")

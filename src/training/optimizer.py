@@ -60,12 +60,18 @@ def build_scheduler(optimizer: torch.optim.Optimizer, config) -> torch.optim.lr_
         scheduler: PyTorch LR scheduler
     """
     scheduler_name = getattr(config, 'scheduler', 'cosine')
-    epochs = getattr(config, 'epochs', 100)
     warmup_epochs = getattr(config, 'warmup_epochs', 5)
+    # CRITICAL: T_max must NOT be derived from config.epochs. modal_train.py
+    # caps config.epochs at 8 for Phase 1 (credit-saving), which would make
+    # T_max = 8 - 5 = 3 and collapse the LR to ~0 by epoch 8 — freezing the
+    # model and crashing mAP. Use a dedicated cosine_t_max (default 120) so the
+    # LR schedule spans the full intended training horizon regardless of the
+    # credit-saving epoch cap.
+    cosine_t_max = getattr(config, 'cosine_t_max', 120)
 
     if scheduler_name == 'cosine':
         # Cosine annealing with warmup
-        main_scheduler = CosineAnnealingLR(optimizer, T_max=epochs - warmup_epochs)
+        main_scheduler = CosineAnnealingLR(optimizer, T_max=cosine_t_max - warmup_epochs)
 
         if warmup_epochs > 0:
             warmup_scheduler = LinearLR(
