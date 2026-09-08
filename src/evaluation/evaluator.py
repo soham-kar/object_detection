@@ -85,7 +85,7 @@ class WRDNetEvaluator:
         boxes = torch.stack([x1, y1, x2, y2], dim=1)  # [N, 4]
         return boxes, confs, cls_ids
 
-    def evaluate_detection(self, dataloader, conf_thres: float = 0.01,
+    def evaluate_detection(self, dataloader, conf_thres: float = 0.05,
                            iou_thres: float = 0.45, use_tta: bool = False) -> Dict[str, float]:
         """
         Compute mAP@50 and mAP@50:95 using a simplified COCO-style metric.
@@ -390,12 +390,13 @@ class WRDNetEvaluator:
 
         return metrics
 
-    def measure_speed(self, input_size: tuple = (1, 3, 640, 640), num_runs: int = 100) -> float:
+    def measure_speed(self, input_size: tuple = (1, 3, 512, 1024), num_runs: int = 100) -> float:
         """
         Measure inference FPS.
 
         Args:
-            input_size: input tensor shape
+            input_size: input tensor shape (default 512x1024 to match the
+                        2:1 aspect ratio used in training/eval, NOT 640x640)
             num_runs: number of inference runs for averaging
         Returns:
             fps: frames per second
