@@ -23,6 +23,8 @@ def parse_args():
     parser.add_argument('--checkpoint', type=str, required=True)
     parser.add_argument('--output', type=str, default='visualizations/alpha_vs_depth.png')
     parser.add_argument('--num_samples', type=int, default=500)
+    parser.add_argument('--data_output', type=str, default=None,
+                        help='Optional .npz path to save the raw (depths, alphas) arrays')
     return parser.parse_args()
 
 
@@ -83,6 +85,31 @@ def main():
     alphas = np.array(alphas)
     depths = np.array(depths)
 
+    # Save raw arrays for exact downstream statistics (Pearson/Spearman, CI).
+    if args.data_output:
+        os.makedirs(os.path.dirname(args.data_output), exist_ok=True)
+        np.savez(args.data_output, depths=depths, alphas=alphas)
+        print(f"Saved data arrays to {args.data_output}")
+
+    # Exact statistics on the raw data (not read off the plot).
+    from scipy import stats
+    pearson_r, pearson_p = stats.pearsonr(depths, alphas)
+    spearman_r, spearman_p = stats.spearmanr(depths, alphas)
+    z = np.polyfit(depths, alphas, 1)
+    slope = z[0]
+    # 95% CI on the slope via bootstrap (deterministic seed for reproducibility).
+    rng = np.random.default_rng(0)
+    n = len(depths)
+    boot_slopes = []
+    for _ in range(2000):
+        idx = rng.integers(0, n, n)
+        boot_slopes.append(np.polyfit(depths[idx], alphas[idx], 1)[0])
+    ci_lo, ci_hi = np.percentile(boot_slopes, [2.5, 97.5])
+
+    print(f"Pearson  r = {pearson_r:.4f}  (p={pearson_p:.2e})")
+    print(f"Spearman r = {spearman_r:.4f}  (p={spearman_p:.2e})")
+    print(f"Slope = {slope:.4f}  [95% CI: {ci_lo:.4f}, {ci_hi:.4f}]")
+
     # Create scatter plot with density coloring
     fig, ax = plt.subplots(figsize=(8, 6))
 
@@ -91,12 +118,14 @@ def main():
     plt.colorbar(hb, ax=ax, label='Count')
 
     # Add trend line
-    z = np.polyfit(depths, alphas, 1)
     p = np.poly1d(z)
     x_line = np.linspace(depths.min(), depths.max(), 100)
-    ax.plot(x_line, p(x_line), 'b--', linewidth=2, label=f'Trend (slope={z[0]:.4f})')
+    ax.plot(x_line, p(x_line), 'b--', linewidth=2,
+            label=f'Trend (slope={slope:.4f}, r={pearson_r:.3f})')
 
-    ax.set_xlabel('Estimated Depth (m)', fontsize=12)
+    # Depth is produced by a Sigmoid head, so it is normalized to [0, 1],
+    # NOT metric meters. Label the axis honestly.
+    ax.set_xlabel('Estimated Relative Depth (normalized)', fontsize=12)
     ax.set_ylabel('FSG Alpha Value', fontsize=12)
     ax.set_title('Alpha Map vs. Depth: DG-FSG learns to trust depth cues', fontsize=14)
     ax.legend()

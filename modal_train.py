@@ -789,6 +789,7 @@ def plot_alpha_depth(phase: str = "phase1"):
         "--config", "configs/default.yaml",
         "--checkpoint", ckpt_path,
         "--output", f"/checkpoints/{phase}/alpha_vs_depth.png",
+        "--data_output", f"/checkpoints/{phase}/alpha_vs_depth_data.npz",
         "--num_samples", "500",
     ], cwd=REPO, capture_output=True, text=True)
 
