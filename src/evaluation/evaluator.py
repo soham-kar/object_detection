@@ -85,7 +85,7 @@ class WRDNetEvaluator:
         boxes = torch.stack([x1, y1, x2, y2], dim=1)  # [N, 4]
         return boxes, confs, cls_ids
 
-    def evaluate_detection(self, dataloader, conf_thres: float = 0.05,
+    def evaluate_detection(self, dataloader, conf_thres: float = 0.01,
                            iou_thres: float = 0.45, use_tta: bool = False) -> Dict[str, float]:
         """
         Compute mAP@50 and mAP@50:95 using a simplified COCO-style metric.
