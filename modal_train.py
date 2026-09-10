@@ -862,6 +862,63 @@ def alpha_depth_plot(phase: str = "phase1"):
     plot_alpha_depth.remote(phase=phase)
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Detection Visualization Function
+# ──────────────────────────────────────────────────────────────────────────────
+
+@app.function(
+    image=image,
+    gpu=GPU_TYPE,
+    volumes={
+        "/data": DATA_VOLUME,
+        "/checkpoints": CHECKPOINT_VOLUME,
+    },
+    timeout=3600,
+    memory=16384,
+)
+def visualize_detections(phase: str = "phase1", num_samples: int = 4, conf_thres: float = 0.25):
+    """
+    Generate qualitative detection visualizations (bounding boxes on foggy images).
+
+    Args:
+        phase: which phase checkpoints to use ('phase0' or 'phase1')
+        num_samples: number of foggy scenes to visualize
+        conf_thres: confidence threshold for drawing boxes (default 0.25)
+    """
+    import sys
+    import os
+    import subprocess
+
+    REPO = "/tmp/object_detection"
+    sys.path.insert(0, REPO)
+    sys.path.insert(0, "/tmp/DehazeFormer")
+    os.chdir(REPO)
+
+    subprocess.run(["git", "fetch", "origin"], cwd=REPO, check=True)
+    subprocess.run(["git", "reset", "--hard", "origin/main"], cwd=REPO, check=True)
+
+    if os.path.exists("data") and not os.path.islink("data"):
+        os.rename("data", "data_backup")
+    if not os.path.exists("data"):
+        os.symlink("/data", "data")
+
+    from scripts.visualize_detections import run
+    run(phase=phase, num_samples=num_samples, conf_thres=conf_thres)
+
+    CHECKPOINT_VOLUME.commit()
+    print(f"\nDetection visualizations saved to /checkpoints/{phase}/detections.png")
+
+
+@app.local_entrypoint()
+def viz_detections(phase: str = "phase1", num_samples: int = 4, conf_thres: float = 0.25):
+    """Visualize WRDNet detections on foggy images.
+
+    Usage:
+        modal run modal_train.py::viz_detections --phase phase1 --num_samples 4
+    """
+    visualize_detections.remote(phase=phase, num_samples=num_samples, conf_thres=conf_thres)
+
+
 @app.local_entrypoint()
 def upload():
     """Upload local data to Modal Volume.
