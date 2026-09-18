@@ -33,8 +33,9 @@ image = (
     timeout=3600
 )
 def generate_risk_image():
-    # 1. Add project root to path INSIDE the remote function
+    # 1. Add project root AND DehazeFormer to path INSIDE the remote function
     sys.path.insert(0, '/tmp/object_detection')
+    sys.path.insert(0, '/tmp/DehazeFormer')  # <--- THIS IS THE FIX
     
     from src.utils.config import load_config
     from src.models.wrnet import WRDNet
