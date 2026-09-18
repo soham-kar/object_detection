@@ -108,9 +108,19 @@ def generate_risk_image():
         else:
             depth_map = np.zeros((512, 1024))
             
-        # 5. Draw Risk Boxes
+                # 5. Draw Risk Boxes
         for i in range(len(boxes_xyxy)):
-            x1, y1, x2, y2 = map(int, boxes_xyxy[i])
+            x1, y1, x2, y2 = boxes_xyxy[i]
+            
+            # Safety check: Skip boxes with Infinity or NaN values
+            if not np.isfinite([x1, y1, x2, y2]).all():
+                continue
+                
+            x1, y1, x2, y2 = map(int, [x1, y1, x2, y2])
+            
+            # Clamp coordinates to image boundaries
+            x1, y1 = max(0, x1), max(0, y1)
+            x2, y2 = min(1023, x2), min(511, y2)
             
             # Get depth at the bottom-center of the bounding box
             cx = int((x1 + x2) / 2)
