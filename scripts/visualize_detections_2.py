@@ -65,13 +65,13 @@ def generate_risk_image():
         img_resized = cv2.resize(img, (1024, 512))
         img_tensor = torch.from_numpy(img_resized).permute(2, 0, 1).unsqueeze(0).float().cuda().half() / 255.0
         
-        # 2. Run Inference
+                # 2. Run Inference (Using the correct forward_train API)
         with torch.no_grad():
-            outputs = model(img_tensor)
+            outputs = model.forward_train({'image': img_tensor}, None, training_phase='eval')
             
         # 3. Extract Detections
-        preds = outputs['detections'][0] 
-        if preds.dim() == 3:
+        preds = outputs['detections_s'] if 'detections_s' in outputs else outputs['detections']
+        if isinstance(preds, (tuple, list)):
             preds = preds[0] # Remove batch dim -> [4+nc, 8400]
             
         # YOLOv8/v11 format: cx, cy, w, h, class_scores...
@@ -83,6 +83,12 @@ def generate_risk_image():
         boxes_cxcywh = boxes_cxcywh[conf_mask]
         scores = scores[conf_mask]
         
+        print(f"  Found {len(boxes_cxcywh)} raw detections above 0.25 conf.")
+        
+        if len(boxes_cxcywh) == 0:
+            results.append(img_resized)
+            continue
+            
         boxes_xyxy = torch.zeros_like(boxes_cxcywh)
         boxes_xyxy[:, 0] = boxes_cxcywh[:, 0] - boxes_cxcywh[:, 2] / 2
         boxes_xyxy[:, 1] = boxes_cxcywh[:, 1] - boxes_cxcywh[:, 3] / 2
@@ -97,6 +103,8 @@ def generate_risk_image():
         keep = nms(boxes_xyxy, scores, iou_threshold=0.45)
         boxes_xyxy = boxes_xyxy[keep].cpu().numpy()
         scores = scores[keep].cpu().numpy()
+        
+        print(f"  {len(boxes_xyxy)} boxes remained after NMS.")
         
         # 4. Extract Depth Map
         depth_pred = outputs.get('depth_640', outputs.get('depth_pred'))
