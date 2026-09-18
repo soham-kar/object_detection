@@ -21,6 +21,7 @@ image = (
         "pyyaml", "timm", "ultralytics"
     )
     .run_commands(
+        "git clone https://github.com/IDKiro/DehazeFormer.git /tmp/DehazeFormer",
         "git clone https://github.com/soham-kar/object_detection.git /tmp/object_detection"
     )
 )
