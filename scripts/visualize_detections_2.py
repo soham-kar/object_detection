@@ -112,8 +112,8 @@ def generate_risk_image():
         boxes_xyxy[:, 3] = boxes_cxcywh[:, 1] + boxes_cxcywh[:, 3] / 2
         
         # Scale boxes to image size (1024x512)
-        boxes_xyxy[:, [0, 2]] *= 1024
-        boxes_xyxy[:, [1, 3]] *= 512
+        # boxes_xyxy[:, [0, 2]] *= 1024
+        # boxes_xyxy[:, [1, 3]] *= 512
         
         # Apply Non-Maximum Suppression (NMS)
         keep = nms(boxes_xyxy, scores, iou_threshold=0.45)
