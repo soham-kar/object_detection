@@ -65,9 +65,9 @@ def generate_risk_image():
         img_resized = cv2.resize(img, (1024, 512))
         img_tensor = torch.from_numpy(img_resized).permute(2, 0, 1).unsqueeze(0).float().cuda().half() / 255.0
         
-                # 2. Run Inference (Using the correct forward_train API)
+        # 2. Run Inference (Using the correct forward_train API)
         with torch.no_grad():
-            outputs = model.forward_train({'image': img_tensor}, None, training_phase='eval')
+            outputs = model.forward_train({'image': img_tensor}, None)
             
         # 3. Extract Detections
         preds = outputs['detections_s'] if 'detections_s' in outputs else outputs['detections']
