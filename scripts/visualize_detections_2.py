@@ -230,7 +230,7 @@ def generate_risk_image():
         with torch.no_grad():
             outputs = model.forward_train({'image': img_tensor}, None)
             
-        # 3. Extract Detections
+                # 3. Extract Detections
         preds = outputs.get('detections_s', outputs.get('detections'))
         if isinstance(preds, (tuple, list)):
             preds = preds[0]
@@ -248,12 +248,14 @@ def generate_risk_image():
             continue
             
         boxes_cxcywh = preds[:4, :].T
-        scores = preds[4:, :].max(dim=0)[0]
+        # Get both the max confidence score AND the class ID (argmax)
+        scores, class_ids = preds[4:, :].max(dim=0)[0], preds[4:, :].argmax(dim=0)
         
-        # Lower confidence threshold to 0.05 to catch missed pedestrians/cars in fog
+        # Lower confidence threshold to 0.05 to catch missed objects in fog
         conf_mask = scores > 0.05
         boxes_cxcywh = boxes_cxcywh[conf_mask]
         scores = scores[conf_mask]
+        class_ids = class_ids[conf_mask]
         
         if len(boxes_cxcywh) == 0:
             results.append(img_resized)
@@ -269,6 +271,7 @@ def generate_risk_image():
         keep = nms(boxes_xyxy, scores, iou_threshold=0.6)
         boxes_xyxy = boxes_xyxy[keep].cpu().numpy()
         scores = scores[keep].cpu().numpy()
+        class_ids = class_ids[keep].cpu().numpy()
         
         # 4. Extract Depth Map (Still extract it for the text label if needed)
         depth_pred = outputs.get('depth_640', outputs.get('depth_pred'))
@@ -279,49 +282,16 @@ def generate_risk_image():
         else:
             depth_map = np.zeros((512, 1024))
             
-        # # 5. Draw Risk Boxes (Using bounding box AREA as a distance proxy)
-        # # Area = width * height. This fixes the issue where tall/thin pedestrians 
-        # # were incorrectly flagged as high risk.
-        # box_widths = boxes_xyxy[:, 2] - boxes_xyxy[:, 0]
-        # box_heights = boxes_xyxy[:, 3] - boxes_xyxy[:, 1]
-        # box_areas = box_widths * box_heights
+        # Define class names
+        CLASS_NAMES = ['person', 'rider', 'car', 'truck', 'bus', 'train', 'motorcycle', 'bicycle']
+            
+        # 5. Draw Risk Boxes (Using bounding box AREA as a distance proxy)
+        box_widths = boxes_xyxy[:, 2] - boxes_xyxy[:, 0]
+        box_heights = boxes_xyxy[:, 3] - boxes_xyxy[:, 1]
+        box_areas = box_widths * box_heights
         
-        # # Find the largest object in the image to scale the risk zones
-        # max_area = max(box_areas) if len(box_areas) > 0 else 1.0
+        max_area = max(box_areas) if len(box_areas) > 0 else 1.0
         
-        # for i in range(len(boxes_xyxy)):
-        #     x1, y1, x2, y2 = boxes_xyxy[i]
-            
-        #     if not np.isfinite([x1, y1, x2, y2]).all():
-        #         continue
-                
-        #     x1, y1, x2, y2 = map(int, [x1, y1, x2, y2])
-        #     x1, y1 = max(0, x1), max(0, y1)
-        #     x2, y2 = min(1023, x2), min(511, y2)
-            
-        #     # Calculate area
-        #     box_area = (x2 - x1) * (y2 - y1)
-            
-        #     # Dynamic risk zones based on AREA
-        #     if box_area > 0.4 * max_area:
-        #         color = (0, 0, 255)      # Red (High Risk - Closest/Largest)
-        #         label = f"HIGH RISK"
-        #     elif box_area > 0.1 * max_area:
-        #         color = (0, 255, 255)    # Yellow (Medium Risk)
-        #         label = f"MED RISK"
-        #     else:
-        #         color = (0, 255, 0)      # Green (Low Risk - Furthest/Smallest)
-        #         label = f"LOW RISK"
-                
-        #     cv2.rectangle(img_resized, (x1, y1), (x2, y2), color, 2)
-        #     cv2.putText(img_resized, label, (x1, y1 - 10), 
-        #                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-            
-        # results.append(img_resized)
-        
-                # 5. Draw Risk Boxes (Using bottom Y-coordinate as a distance proxy)
-        # In driving cameras, objects near the bottom of the image (high Y) are closer.
-        # Objects near the horizon (low Y) are further away.
         for i in range(len(boxes_xyxy)):
             x1, y1, x2, y2 = boxes_xyxy[i]
             
@@ -332,26 +302,28 @@ def generate_risk_image():
             x1, y1 = max(0, x1), max(0, y1)
             x2, y2 = min(1023, x2), min(511, y2)
             
-            # Use the bottom-center Y coordinate as the distance proxy
-            bottom_y = y2
+            box_area = (x2 - x1) * (y2 - y1)
             
-            # Fixed thresholds based on image height (512px)
-            # > 350px = Close to camera (High Risk)
-            # 200-350px = Medium distance (Med Risk)
-            # < 200px = Near horizon / far away (Low Risk)
-            if bottom_y > 350:
+            # Get class name
+            cls_name = CLASS_NAMES[int(class_ids[i])]
+            
+            # Dynamic risk zones based on AREA
+            if box_area > 0.4 * max_area:
                 color = (0, 0, 255)      # Red (High Risk)
-                label = f"HIGH RISK"
-            elif bottom_y > 200:
+                risk_label = "HIGH RISK"
+            elif box_area > 0.1 * max_area:
                 color = (0, 255, 255)    # Yellow (Medium Risk)
-                label = f"MED RISK"
+                risk_label = "MED RISK"
             else:
                 color = (0, 255, 0)      # Green (Low Risk)
-                label = f"LOW RISK"
+                risk_label = "LOW RISK"
+                
+            # Combine class name and risk label
+            full_label = f"{cls_name}: {risk_label}"
                 
             cv2.rectangle(img_resized, (x1, y1), (x2, y2), color, 2)
-            cv2.putText(img_resized, label, (x1, y1 - 10), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+            cv2.putText(img_resized, full_label, (x1, y1 - 10), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
             
         results.append(img_resized)
         
