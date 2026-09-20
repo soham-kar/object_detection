@@ -230,37 +230,30 @@ def generate_risk_image():
         with torch.no_grad():
             outputs = model.forward_train({'image': img_tensor}, None)
             
-        # 3. Extract Detections
+                # 3. Extract Detections
         preds = outputs.get('detections_s', outputs.get('detections'))
         if isinstance(preds, (tuple, list)):
             preds = preds[0]
             
-        print(f"  Raw preds shape: {preds.shape}")
-        
         # Ensure shape is [4+nc, N]
         if preds.dim() == 3:
             preds = preds.squeeze(0)
         elif preds.dim() == 2 and preds.shape[0] < preds.shape[1]:
-            pass # Already [4+nc, N]
+            pass 
         else:
             preds = preds.T
             
-        # Safety check: Skip if no class scores are present
         if preds.shape[0] < 5:
-            print("  WARNING: No class scores found in predictions! Skipping drawing.")
             results.append(img_resized)
             continue
             
-        # YOLOv8/v11 format: cx, cy, w, h, class_scores...
         boxes_cxcywh = preds[:4, :].T
         scores = preds[4:, :].max(dim=0)[0]
         
-        # Filter by confidence (0.25) and convert to xyxy
-        conf_mask = scores > 0.25
+        # Lower confidence threshold to 0.15 to catch more objects in fog
+        conf_mask = scores > 0.15
         boxes_cxcywh = boxes_cxcywh[conf_mask]
         scores = scores[conf_mask]
-        
-        print(f"  Found {len(boxes_cxcywh)} raw detections above 0.25 conf.")
         
         if len(boxes_cxcywh) == 0:
             results.append(img_resized)
@@ -272,64 +265,52 @@ def generate_risk_image():
         boxes_xyxy[:, 2] = boxes_cxcywh[:, 0] + boxes_cxcywh[:, 2] / 2
         boxes_xyxy[:, 3] = boxes_cxcywh[:, 1] + boxes_cxcywh[:, 3] / 2
         
-        # Apply Non-Maximum Suppression (NMS)
         keep = nms(boxes_xyxy, scores, iou_threshold=0.45)
         boxes_xyxy = boxes_xyxy[keep].cpu().numpy()
         scores = scores[keep].cpu().numpy()
         
-        print(f"  {len(boxes_xyxy)} boxes remained after NMS.")
-        print(f"  Sample box coordinates: {boxes_xyxy[0]}") # Print first box coords
-        
-        # 4. Extract Depth Map
+        # 4. Extract Depth Map (Still extract it, but we will use box height for the viz)
         depth_pred = outputs.get('depth_640', outputs.get('depth_pred'))
         if depth_pred is not None:
-            # Depth decoder outputs 0-1 (Sigmoid). Multiply by max_depth (80m) to get metric depth
             depth_map = depth_pred.squeeze().cpu().float().numpy() * 80.0
             if depth_map.shape != (512, 1024):
                 depth_map = cv2.resize(depth_map, (1024, 512))
         else:
             depth_map = np.zeros((512, 1024))
             
-        # 5. Draw Risk Boxes
+        # 5. Draw Risk Boxes (Using bounding box height as a distance proxy)
         for i in range(len(boxes_xyxy)):
             x1, y1, x2, y2 = boxes_xyxy[i]
             
-            # Safety check: Skip boxes with Infinity or NaN values
             if not np.isfinite([x1, y1, x2, y2]).all():
-                print(f"  Skipping invalid box: {boxes_xyxy[i]}")
                 continue
                 
             x1, y1, x2, y2 = map(int, [x1, y1, x2, y2])
-            
-            # Clamp coordinates to image boundaries
             x1, y1 = max(0, x1), max(0, y1)
             x2, y2 = min(1023, x2), min(511, y2)
             
-            # Get depth at the bottom-center of the bounding box
-            cx = int((x1 + x2) / 2)
-            cy = int(y2 - (y2 - y1) * 0.1) # Slightly above the bottom edge
-            cy = max(0, min(511, cy))
-            cx = max(0, min(1023, cx))
+            # Calculate bounding box height
+            box_height = y2 - y1
             
-            obj_depth = depth_map[cy, cx]
-            
-            # Determine Risk Level based on depth
-            if obj_depth < 15.0:
+            # Use box height as a proxy for distance:
+            # > 150px = Very Close (High Risk)
+            # 80-150px = Medium distance (Medium Risk)
+            # < 80px = Far away (Low Risk)
+            if box_height > 150:
                 color = (0, 0, 255)      # Red (High Risk)
-                label = f"HIGH RISK ({obj_depth:.1f}m)"
-            elif obj_depth < 30.0:
+                label = f"HIGH RISK"
+            elif box_height > 80:
                 color = (0, 255, 255)    # Yellow (Medium Risk)
-                label = f"MED RISK ({obj_depth:.1f}m)"
+                label = f"MED RISK"
             else:
                 color = (0, 255, 0)      # Green (Low Risk)
-                label = f"LOW RISK ({obj_depth:.1f}m)"
+                label = f"LOW RISK"
                 
             cv2.rectangle(img_resized, (x1, y1), (x2, y2), color, 2)
             cv2.putText(img_resized, label, (x1, y1 - 10), 
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
             
         results.append(img_resized)
-
     # 6. Create and Save 2x2 Montage
     top = np.hstack((results[0], results[1]))
     bottom = np.hstack((results[2], results[3]))
