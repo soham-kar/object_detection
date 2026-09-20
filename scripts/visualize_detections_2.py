@@ -279,10 +279,15 @@ def generate_risk_image():
         else:
             depth_map = np.zeros((512, 1024))
             
-        # 5. Draw Risk Boxes (Using DYNAMIC bounding box height)
-        # Calculate the max box height in this specific image to scale the risk zones
+        # 5. Draw Risk Boxes (Using bounding box AREA as a distance proxy)
+        # Area = width * height. This fixes the issue where tall/thin pedestrians 
+        # were incorrectly flagged as high risk.
+        box_widths = boxes_xyxy[:, 2] - boxes_xyxy[:, 0]
         box_heights = boxes_xyxy[:, 3] - boxes_xyxy[:, 1]
-        max_h = max(box_heights) if len(box_heights) > 0 else 1.0
+        box_areas = box_widths * box_heights
+        
+        # Find the largest object in the image to scale the risk zones
+        max_area = max(box_areas) if len(box_areas) > 0 else 1.0
         
         for i in range(len(boxes_xyxy)):
             x1, y1, x2, y2 = boxes_xyxy[i]
@@ -294,17 +299,18 @@ def generate_risk_image():
             x1, y1 = max(0, x1), max(0, y1)
             x2, y2 = min(1023, x2), min(511, y2)
             
-            box_height = y2 - y1
+            # Calculate area
+            box_area = (x2 - x1) * (y2 - y1)
             
-            # Dynamic risk zones based on the largest object in the image
-            if box_height > 0.5 * max_h:
-                color = (0, 0, 255)      # Red (High Risk - Closest)
+            # Dynamic risk zones based on AREA
+            if box_area > 0.4 * max_area:
+                color = (0, 0, 255)      # Red (High Risk - Closest/Largest)
                 label = f"HIGH RISK"
-            elif box_height > 0.25 * max_h:
+            elif box_area > 0.1 * max_area:
                 color = (0, 255, 255)    # Yellow (Medium Risk)
                 label = f"MED RISK"
             else:
-                color = (0, 255, 0)      # Green (Low Risk - Furthest)
+                color = (0, 255, 0)      # Green (Low Risk - Furthest/Smallest)
                 label = f"LOW RISK"
                 
             cv2.rectangle(img_resized, (x1, y1), (x2, y2), color, 2)
@@ -312,6 +318,7 @@ def generate_risk_image():
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
             
         results.append(img_resized)
+        
     # 6. Create and Save 2x2 Montage
     top = np.hstack((results[0], results[1]))
     bottom = np.hstack((results[2], results[3]))
