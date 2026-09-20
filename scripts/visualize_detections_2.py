@@ -69,10 +69,26 @@ def generate_risk_image():
         with torch.no_grad():
             outputs = model.forward_train({'image': img_tensor}, None)
             
-        # 3. Extract Detections
-        preds = outputs['detections_s'] if 'detections_s' in outputs else outputs['detections']
+                # 3. Extract Detections
+        preds = outputs.get('detections_s', outputs.get('detections'))
         if isinstance(preds, (tuple, list)):
-            preds = preds[0] # Remove batch dim -> [4+nc, 8400]
+            preds = preds[0]
+            
+        print(f"  Raw preds shape: {preds.shape}")
+        
+        # Ensure shape is [4+nc, N]
+        if preds.dim() == 3:
+            preds = preds.squeeze(0)
+        elif preds.dim() == 2 and preds.shape[0] < preds.shape[1]:
+            pass # Already [4+nc, N]
+        else:
+            preds = preds.T
+            
+        # Safety check: Skip if no class scores are present
+        if preds.shape[0] < 5:
+            print("  WARNING: No class scores found in predictions! Skipping drawing.")
+            results.append(img_resized)
+            continue
             
         # YOLOv8/v11 format: cx, cy, w, h, class_scores...
         boxes_cxcywh = preds[:4, :].T
