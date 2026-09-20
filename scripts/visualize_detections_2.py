@@ -230,7 +230,7 @@ def generate_risk_image():
         with torch.no_grad():
             outputs = model.forward_train({'image': img_tensor}, None)
             
-                # 3. Extract Detections
+        # 3. Extract Detections
         preds = outputs.get('detections_s', outputs.get('detections'))
         if isinstance(preds, (tuple, list)):
             preds = preds[0]
@@ -250,8 +250,8 @@ def generate_risk_image():
         boxes_cxcywh = preds[:4, :].T
         scores = preds[4:, :].max(dim=0)[0]
         
-        # Lower confidence threshold to 0.15 to catch more objects in fog
-        conf_mask = scores > 0.15
+        # Lower confidence threshold to 0.05 to catch missed pedestrians/cars in fog
+        conf_mask = scores > 0.05
         boxes_cxcywh = boxes_cxcywh[conf_mask]
         scores = scores[conf_mask]
         
@@ -265,11 +265,12 @@ def generate_risk_image():
         boxes_xyxy[:, 2] = boxes_cxcywh[:, 0] + boxes_cxcywh[:, 2] / 2
         boxes_xyxy[:, 3] = boxes_cxcywh[:, 1] + boxes_cxcywh[:, 3] / 2
         
-        keep = nms(boxes_xyxy, scores, iou_threshold=0.45)
+        # Loosen NMS threshold to 0.6 so it doesn't delete overlapping objects
+        keep = nms(boxes_xyxy, scores, iou_threshold=0.6)
         boxes_xyxy = boxes_xyxy[keep].cpu().numpy()
         scores = scores[keep].cpu().numpy()
         
-        # 4. Extract Depth Map (Still extract it, but we will use box height for the viz)
+        # 4. Extract Depth Map (Still extract it for the text label if needed)
         depth_pred = outputs.get('depth_640', outputs.get('depth_pred'))
         if depth_pred is not None:
             depth_map = depth_pred.squeeze().cpu().float().numpy() * 80.0
@@ -278,7 +279,11 @@ def generate_risk_image():
         else:
             depth_map = np.zeros((512, 1024))
             
-        # 5. Draw Risk Boxes (Using bounding box height as a distance proxy)
+        # 5. Draw Risk Boxes (Using DYNAMIC bounding box height)
+        # Calculate the max box height in this specific image to scale the risk zones
+        box_heights = boxes_xyxy[:, 3] - boxes_xyxy[:, 1]
+        max_h = max(box_heights) if len(box_heights) > 0 else 1.0
+        
         for i in range(len(boxes_xyxy)):
             x1, y1, x2, y2 = boxes_xyxy[i]
             
@@ -289,21 +294,17 @@ def generate_risk_image():
             x1, y1 = max(0, x1), max(0, y1)
             x2, y2 = min(1023, x2), min(511, y2)
             
-            # Calculate bounding box height
             box_height = y2 - y1
             
-            # Use box height as a proxy for distance:
-            # > 150px = Very Close (High Risk)
-            # 80-150px = Medium distance (Medium Risk)
-            # < 80px = Far away (Low Risk)
-            if box_height > 150:
-                color = (0, 0, 255)      # Red (High Risk)
+            # Dynamic risk zones based on the largest object in the image
+            if box_height > 0.5 * max_h:
+                color = (0, 0, 255)      # Red (High Risk - Closest)
                 label = f"HIGH RISK"
-            elif box_height > 80:
+            elif box_height > 0.25 * max_h:
                 color = (0, 255, 255)    # Yellow (Medium Risk)
                 label = f"MED RISK"
             else:
-                color = (0, 255, 0)      # Green (Low Risk)
+                color = (0, 255, 0)      # Green (Low Risk - Furthest)
                 label = f"LOW RISK"
                 
             cv2.rectangle(img_resized, (x1, y1), (x2, y2), color, 2)
